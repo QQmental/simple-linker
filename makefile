@@ -34,13 +34,15 @@ CC = g++
 
 CPP_FLAG = -std=c++17 -pedantic -Wall -MMD -g
 
-SRCS = example.cpp main.cpp
+SRCS = Relocatable_file.cpp
 
 OBJS = $(SRCS:%.cpp=%.o)
 
 DEPS = $(OBJS:%.o=%.d)
 
-all: ld gdb_ld ld2
+BINS = ld gdb_ld ld2
+
+all: $(BINS)
 	riscv64-unknown-elf-gcc test3.c -g -O0 -march=rv64imafc -mabi=lp64 -c -o test3.o
 	riscv64-unknown-elf-gcc test3.o -B. -static -g -O0 -march=rv64imafc -mabi=lp64 -o test3.elf	
 
@@ -50,14 +52,17 @@ example.o:example.cpp
 main.o:main.cpp
 	$(CC) $< $(CPP_FLAG) -c -o $@
 
-ld: $(OBJS)
-	$(CC) example.cpp $(CPP_FLAG) -o $@
+Relocatable_file.o: Relocatable_file.cpp
+	$(CC) $< $(CPP_FLAG) -c -o $@
 
-ld2: $(OBJS)
-	$(CC) main.cpp -fsanitize=undefined,address $(CPP_FLAG) -o $@
+ld: example.o $(OBJS)
+	$(CC) $^ -fsanitize=undefined,address $(CPP_FLAG) -o $@
 
-gdb_ld: $(OBJS)
-	$(CC) main.cpp -fsanitize=undefined $(CPP_FLAG) -o $@
+ld2: main.o $(OBJS)
+	$(CC) $^ -fsanitize=undefined,address $(CPP_FLAG) -o $@
+
+gdb_ld: main.o $(OBJS)
+	$(CC) $^ -fsanitize=undefined $(CPP_FLAG) -o $@
 
 linking: ld2
 	./ld2 $(link_test_args)
@@ -65,9 +70,10 @@ linking: ld2
 run_gdb: gdb_ld
 	gdb --args ./gdb_ld $(link_test_args)
 	
-
-
 clean:
-	$(shell rm -rf ./test3.elf ./ld ./gdb_ld ./ld2)
+	$(shell rm -rf ./test3.elf)
+	$(shell rm -rf $(wildcard ./*.d))
+	$(shell rm -rf $(wildcard ./*.o))
+	$(shell rm -rf $(BINS))
 
 -include $(DEPS)

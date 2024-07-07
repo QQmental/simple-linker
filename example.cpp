@@ -5,6 +5,7 @@
 #include <fstream>
 
 #include "RISC_V_linking_data.h"
+#include "Relocatable_file.h"
 
 int main(int argc, char* argv[])
 {
@@ -23,7 +24,7 @@ int main(int argc, char* argv[])
     auto data = std::unique_ptr<char[]>(new char[file_size]);    
     file.seekg(0, std::ios::beg);
     file.read(data.get(), file_size);
-    nRSIC_V_linking_data::Relocatable_file rel(std::move(data));
+    Relocatable_file rel(std::move(data));
 
     file.close();
 }

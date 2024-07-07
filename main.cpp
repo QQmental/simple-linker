@@ -11,6 +11,7 @@
 #include "RISC_V_linking_data.h"
 #include "Archive_file.h"
 #include "util.h"
+#include "Relocatable_file.h"
 
 constexpr std::size_t gARCHIVE_MAGIC_LEN = nUtil::const_expr_STR_len(ARCHIVE_FILE_MAGIC);
 
@@ -54,8 +55,8 @@ static eFile_type Get_file_type(const elf64_hdr &hdr);
 static std::vector<Link_option_args::path_of_file_t> Find_libraries(const Link_option_args &link_option_args);
 
 static std::string Read_archive_scetion_name(const Archive_file_header &ar_fhdr, const char* str_tbl);
-static void Load_archived_file_section(std::vector<nRSIC_V_linking_data::Relocatable_file> &object_file, const std::vector<Link_option_args::path_of_file_t> &lib_path) ;
-static void Collect_rel_file_content(std::vector<nRSIC_V_linking_data::Relocatable_file> &object_file, const Link_option_args &link_option_args);
+static void Load_archived_file_section(std::vector<Relocatable_file> &object_file, const std::vector<Link_option_args::path_of_file_t> &lib_path) ;
+static void Collect_rel_file_content(std::vector<Relocatable_file> &object_file, const Link_option_args &link_option_args);
 
 static void Show_link_option_args(const Link_option_args &link_option_args);
 
@@ -72,7 +73,7 @@ int main(int argc, char* argv[])
 
     link_option_args.library = Find_libraries(link_option_args);
 
-    std::vector<nRSIC_V_linking_data::Relocatable_file> rel_file;
+    std::vector<Relocatable_file> rel_file;
 
     Collect_rel_file_content(rel_file, link_option_args);
 }
@@ -166,7 +167,7 @@ static std::string Read_archive_scetion_name(const Archive_file_header &ar_fhdr,
 
 }
 
-static void Load_archived_file_section(std::vector<nRSIC_V_linking_data::Relocatable_file> &object_file, const std::vector<Link_option_args::path_of_file_t> &lib_path)
+static void Load_archived_file_section(std::vector<Relocatable_file> &rel_file, const std::vector<Link_option_args::path_of_file_t> &lib_path)
 {
     for(const auto &path : lib_path)
     {
@@ -190,13 +191,7 @@ static void Load_archived_file_section(std::vector<nRSIC_V_linking_data::Relocat
                 else // it's the end of the file, stop reading it
                     break;
             }
-            
-            if (Archive_file_header::Is_object(ar_fhdr) == true)
-            {
-                std::string name = Read_archive_scetion_name(ar_fhdr, reinterpret_cast<const char*>(str_tbl_sec.get()));
-                //std::cout << name << "\n";
-            }            
-            
+                      
             auto sz = std::atoi(reinterpret_cast<const char*>(&ar_fhdr.file_size));
 
             // align read size because sections are aligned with 2
@@ -217,14 +212,16 @@ static void Load_archived_file_section(std::vector<nRSIC_V_linking_data::Relocat
             {
                 if (Get_file_type(*reinterpret_cast<const elf64_hdr*>(section.get())) != eFile_type::ET_REL)        
                     FATALF("%s expected to be a relocation type but it is actully not a rel file !", path.c_str());
-                object_file.push_back(std::move(section));
+
+                std::string name = Read_archive_scetion_name(ar_fhdr, reinterpret_cast<const char*>(str_tbl_sec.get()));
+                //rel_file.push_back(std::move(section));
             }
         }
         fclose(fptr);
     }
 }
 
-static void Collect_rel_file_content(std::vector<nRSIC_V_linking_data::Relocatable_file> &object_file, const Link_option_args &link_option_args)
+static void Collect_rel_file_content(std::vector<Relocatable_file> &rel_file, const Link_option_args &link_option_args)
 {
     for(const auto &path : link_option_args.obj_file)
     {
@@ -247,10 +244,24 @@ static void Collect_rel_file_content(std::vector<nRSIC_V_linking_data::Relocatab
         if (Get_file_type(*reinterpret_cast<const elf64_hdr*>(new_obj_file.get())) != eFile_type::ET_REL)        
             FATALF("%s expected to be a relocation type but it is actully not a rel file !", path.c_str());
         
-        object_file.push_back(std::move(new_obj_file));
+        rel_file.push_back(std::move(new_obj_file));
     } 
     
-    Load_archived_file_section(object_file, link_option_args.library); 
+    Load_archived_file_section(rel_file, link_option_args.library);
+
+    int x = 0;
+    for(auto &item : rel_file)
+    {
+        for(std::size_t i = 0 ; i < item.section_hdr_table().header_count() ; i++)
+        {
+            auto &shdr = item.section_hdr_table().headers()[i];
+            if (shdr.sh_type == SHT_RISC_V_ATTRIBUTES)
+            {
+                x++;
+            }
+        }
+
+    }
 }
 
 static void Parse_args(Link_option_args *dst, int argc, char* argv[])

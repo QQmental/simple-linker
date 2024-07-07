@@ -4,7 +4,7 @@
 #include <utility>
 #include <string.h>
 #include <memory>
-#include "../RVemu/elf.h"
+#include "elf/ELF.h"
 #include "util.h"
 
 // although ARCHIVE_FILE_MAGIC is represented as a ascii string here, it's not followed by a '\0' in the archive file
@@ -20,8 +20,6 @@ class String_table;
 class Section_hdr_table;
 
 class Symbol_table;
-
-class Relocatable_file;
 
 class String_table
 {
@@ -92,7 +90,6 @@ public:
 
     ~Section_hdr_table() {delete m_tbl;}
 
-    const char *data() const {return m_data;}
     const elf64_shdr* headers() const {return m_shdr_list;}
     std::size_t header_count() const 
     {
@@ -115,26 +112,27 @@ private:
 class Symbol_table
 {
 public:
-    Symbol_table(const char *data, const elf64_shdr &shdr, const Section_hdr_table &sec_hdr_tbl) : m_sym_tbl(nullptr), m_symbol_cnt(0)
+    Symbol_table(const char *data, const elf64_shdr &shdr, const Section_hdr_table &sec_hdr_tbl) : m_sym_tbl(nullptr)
     {
         if (shdr.sh_type != SHT_SYMTAB)
             FATALF("the given section header is not for symbol table, its type is %u", shdr.sh_type);
         m_sym_tbl = reinterpret_cast<const Elf64_Sym *>(data + shdr.sh_offset);
-        m_symbol_cnt = shdr.sh_size / sizeof(elf64_shdr);
+        auto symbol_cnt = shdr.sh_size / sizeof(elf64_shdr);
 
         auto &str_tbl_sec_hdr = sec_hdr_tbl.headers()[shdr.sh_link];
 
-        m_str_tbl = Create_symbol_string_table(data, str_tbl_sec_hdr, m_sym_tbl, m_symbol_cnt);
+        m_str_tbl = Create_symbol_string_table(data, str_tbl_sec_hdr, m_sym_tbl, symbol_cnt);
     }
 
     ~Symbol_table() = default;
 
     const Elf64_Sym* data() const {return m_sym_tbl;}
+    std::size_t count() const {return m_str_tbl->str_ptr_list().size();}
     const String_table& string_table() const {return *m_str_tbl.get();}
-    const String_table::str_ptr_list_t& str_table_ptr() const {return m_str_tbl.get()->str_ptr_list();}
+    const String_table::str_ptr_list_t& str_table_ptr() const {return m_str_tbl->str_ptr_list();}
+
 private:
     const Elf64_Sym *m_sym_tbl;
-    std::size_t m_symbol_cnt;
     //name of each symbol
     std::unique_ptr<String_table> m_str_tbl;
 };
@@ -161,44 +159,7 @@ inline std::unique_ptr<String_table> Create_symbol_string_table(const char *data
 }
 
 
-class Relocatable_file
-{
-public:
-    Relocatable_file(std::unique_ptr<char[]> data) : m_section_hdr_table(data.get()), m_data(std::move(data))
-    {
-        std::size_t symtab_idx = -1;
 
-        for(std::size_t i = 0 ; i < m_section_hdr_table.header_count() ; i++)
-        {
-            if (m_section_hdr_table.headers()[i].sh_type == SHT_SYMTAB)
-            {
-                symtab_idx = i;
-                break;
-            }
-        }
-
-        if (symtab_idx == (std::size_t)-1)
-            FATALF("symbol table index is not found !");
-
-        m_symbol_table = std::unique_ptr<Symbol_table>(new Symbol_table(m_data.get(), 
-                                                                        m_section_hdr_table.headers()[symtab_idx], 
-                                                                        m_section_hdr_table));
-    }
-
-    Relocatable_file(const Relocatable_file &src) = delete;
-    
-    Relocatable_file(Relocatable_file &&src) : m_section_hdr_table(std::move(src.m_section_hdr_table)), 
-                                               m_symbol_table(std::move(src.m_symbol_table)), 
-                                               m_data(std::move(src.m_data)){}
-
-    const Section_hdr_table& section_hdr_table() const {return m_section_hdr_table;}
-    const Symbol_table& symbol_table() const {return *m_symbol_table;}
-
-    // be aware of the initilization order
-    Section_hdr_table m_section_hdr_table;
-    std::unique_ptr<Symbol_table> m_symbol_table;
-    std::unique_ptr<char[]> m_data;
-};
 
 }
 
