@@ -177,7 +177,7 @@ static void Load_archived_file_section(std::vector<std::unique_ptr<uint8_t[]>> &
         if (Is_archived_file(fptr) == false)
             FATALF("%s is not an archived file !\n", path.c_str());
 
-        //[ARCHIVE_FILE_MAGIC][ar_fhdr][section][ar_fhdr][section]...[ar_fhdr][section]
+
 
         std::unique_ptr<uint8_t[]> str_tbl_sec;
 

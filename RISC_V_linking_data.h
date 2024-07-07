@@ -21,6 +21,8 @@ class Section_hdr_table;
 
 class Symbol_table;
 
+class Relocatable_file;
+
 class String_table
 {
 public:
@@ -133,6 +135,14 @@ inline std::unique_ptr<String_table> Create_symbol_string_table(FILE *file, cons
 
     return ret;
 }
+
+
+class Relocatable_file
+{
+
+
+
+};
 
 }
 
