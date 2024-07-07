@@ -30,18 +30,34 @@ link_test_args = -plugin \
 	-lgcc \
 	/opt/riscv/lib/gcc/riscv64-unknown-elf/13.2.0/rv64imac/lp64/crtend.o
 
+CC = g++
+
+CPP_FLAG = -std=c++17 -pedantic -Wall -MMD -g
+
+SRCS = example.cpp main.cpp
+
+OBJS = $(SRCS:%.cpp=%.o)
+
+DEPS = $(OBJS:%.o=%.d)
+
 all: ld gdb_ld ld2
 	riscv64-unknown-elf-gcc test3.c -g -O0 -march=rv64imafc -mabi=lp64 -c -o test3.o
 	riscv64-unknown-elf-gcc test3.o -B. -static -g -O0 -march=rv64imafc -mabi=lp64 -o test3.elf	
 
-ld: example.cpp
-	g++ example.cpp -std=c++17 -pedantic -Wall -g -o ld
+example.o:example.cpp
+	$(CC) $< $(CPP_FLAG) -c -o $@
 
-ld2: main.cpp
-	g++ main.cpp -std=c++17 -pedantic -fsanitize=undefined,address -Wall -g -o ld2
+main.o:main.cpp
+	$(CC) $< $(CPP_FLAG) -c -o $@
 
-gdb_ld: main.cpp
-	g++ main.cpp -std=c++17 -pedantic -fsanitize=undefined -Wall -g -o gdb_ld
+ld: $(OBJS)
+	$(CC) example.cpp $(CPP_FLAG) -o $@
+
+ld2: $(OBJS)
+	$(CC) main.cpp -fsanitize=undefined,address $(CPP_FLAG) -o $@
+
+gdb_ld: $(OBJS)
+	$(CC) main.cpp -fsanitize=undefined $(CPP_FLAG) -o $@
 
 linking: ld2
 	./ld2 $(link_test_args)
@@ -53,3 +69,5 @@ run_gdb: gdb_ld
 
 clean:
 	$(shell rm -rf ./test3.elf ./ld ./gdb_ld ./ld2)
+
+-include $(DEPS)
