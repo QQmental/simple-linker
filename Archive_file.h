@@ -9,7 +9,7 @@ Numeric values are encoded in ASCII and all values right-padded with ASCII space
 archive file format: [ARCHIVE_FILE_MAGIC][ar_fhdr][section][ar_fhdr][section]...[ar_fhdr][section]
 
 each section would be either a string table, symbol table, or relocatable file
-if it's a string table, it's used for long files' name
+if it's a string table, it's used for files having long name
 */
 struct Archive_file_header
 {

@@ -32,6 +32,7 @@ public:
     {
 
     }
+    
 
     using str_ptr_list_t = std::vector<const char*>;
 
@@ -76,6 +77,19 @@ public:
         m_tbl = new String_table(std::move(str_table_ptr), str_tbl);
     }
 
+    Section_hdr_table(const Section_hdr_table &src) : m_data(src.m_data), m_shdr_list(src.m_shdr_list), m_tbl(new String_table(*src.m_tbl)) {}
+    Section_hdr_table(Section_hdr_table &&src) : m_data(src.m_data), m_shdr_list(src.m_shdr_list), m_tbl(src.m_tbl)
+    {
+        src.m_tbl = nullptr;
+    }
+    Section_hdr_table& operator= (Section_hdr_table src)
+    {
+        std::swap(m_data, src.m_data);
+        std::swap(m_shdr_list, src.m_shdr_list);
+        std::swap(m_tbl, src.m_tbl);
+        return *this;
+    }
+
     ~Section_hdr_table() {delete m_tbl;}
 
     const char *data() const {return m_data;}
@@ -103,7 +117,8 @@ class Symbol_table
 public:
     Symbol_table(const char *data, const elf64_shdr &shdr, const Section_hdr_table &sec_hdr_tbl) : m_sym_tbl(nullptr), m_symbol_cnt(0)
     {
-        assert(shdr.sh_type == SHT_SYMTAB);
+        if (shdr.sh_type != SHT_SYMTAB)
+            FATALF("the given section header is not for symbol table, its type is %u", shdr.sh_type);
         m_sym_tbl = reinterpret_cast<const Elf64_Sym *>(data + shdr.sh_offset);
         m_symbol_cnt = shdr.sh_size / sizeof(elf64_shdr);
 
@@ -170,7 +185,11 @@ public:
                                                                         m_section_hdr_table));
     }
 
-
+    Relocatable_file(const Relocatable_file &src) = delete;
+    
+    Relocatable_file(Relocatable_file &&src) : m_section_hdr_table(std::move(src.m_section_hdr_table)), 
+                                               m_symbol_table(std::move(src.m_symbol_table)), 
+                                               m_data(std::move(src.m_data)){}
 
     const Section_hdr_table& section_hdr_table() const {return m_section_hdr_table;}
     const Symbol_table& symbol_table() const {return *m_symbol_table;}

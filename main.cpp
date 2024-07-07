@@ -54,8 +54,8 @@ static eFile_type Get_file_type(const elf64_hdr &hdr);
 static std::vector<Link_option_args::path_of_file_t> Find_libraries(const Link_option_args &link_option_args);
 
 static std::string Read_archive_scetion_name(const Archive_file_header &ar_fhdr, const char* str_tbl);
-static void Load_archived_file_section(std::vector<std::unique_ptr<uint8_t[]>> &object_file, const std::vector<Link_option_args::path_of_file_t> &lib_path) ;
-static void Collect_object_file_content(std::vector<std::unique_ptr<uint8_t[]>> &object_file, const Link_option_args &link_option_args);
+static void Load_archived_file_section(std::vector<nRSIC_V_linking_data::Relocatable_file> &object_file, const std::vector<Link_option_args::path_of_file_t> &lib_path) ;
+static void Collect_rel_file_content(std::vector<nRSIC_V_linking_data::Relocatable_file> &object_file, const Link_option_args &link_option_args);
 
 static void Show_link_option_args(const Link_option_args &link_option_args);
 
@@ -72,9 +72,9 @@ int main(int argc, char* argv[])
 
     link_option_args.library = Find_libraries(link_option_args);
 
-    std::vector<std::unique_ptr<uint8_t[]>> object_file;
+    std::vector<nRSIC_V_linking_data::Relocatable_file> rel_file;
 
-    Collect_object_file_content(object_file, link_option_args);
+    Collect_rel_file_content(rel_file, link_option_args);
 }
 
 //the first few bytes are read from the file and compared with ARCHIVE_FILE_MAGIC, 
@@ -166,7 +166,7 @@ static std::string Read_archive_scetion_name(const Archive_file_header &ar_fhdr,
 
 }
 
-static void Load_archived_file_section(std::vector<std::unique_ptr<uint8_t[]>> &object_file, const std::vector<Link_option_args::path_of_file_t> &lib_path)
+static void Load_archived_file_section(std::vector<nRSIC_V_linking_data::Relocatable_file> &object_file, const std::vector<Link_option_args::path_of_file_t> &lib_path)
 {
     for(const auto &path : lib_path)
     {
@@ -177,9 +177,7 @@ static void Load_archived_file_section(std::vector<std::unique_ptr<uint8_t[]>> &
         if (Is_archived_file(fptr) == false)
             FATALF("%s is not an archived file !\n", path.c_str());
 
-
-
-        std::unique_ptr<uint8_t[]> str_tbl_sec;
+        std::unique_ptr<char[]> str_tbl_sec;
 
         while(feof(fptr) == 0)
         {
@@ -204,7 +202,7 @@ static void Load_archived_file_section(std::vector<std::unique_ptr<uint8_t[]>> &
             // align read size because sections are aligned with 2
             sz += sz%2;
 
-            std::unique_ptr<uint8_t[]> section(new uint8_t[sz]);
+            std::unique_ptr<char[]> section(new char[sz]);
 
             if (fread(section.get(), sizeof(char), sz, fptr) != (std::size_t)sz)
                 FATALF("fail to load the sections, only %u is read\n", sz);
@@ -226,7 +224,7 @@ static void Load_archived_file_section(std::vector<std::unique_ptr<uint8_t[]>> &
     }
 }
 
-static void Collect_object_file_content(std::vector<std::unique_ptr<uint8_t[]>> &object_file, const Link_option_args &link_option_args)
+static void Collect_rel_file_content(std::vector<nRSIC_V_linking_data::Relocatable_file> &object_file, const Link_option_args &link_option_args)
 {
     for(const auto &path : link_option_args.obj_file)
     {
@@ -238,7 +236,7 @@ static void Collect_object_file_content(std::vector<std::unique_ptr<uint8_t[]>> 
         file.seekg(0, std::ios::end);
         std::size_t file_size =  file.tellg();
         
-        auto new_obj_file = std::unique_ptr<uint8_t[]>(new uint8_t[file_size]);
+        auto new_obj_file = std::unique_ptr<char[]>(new char[file_size]);
 
         file.seekg(0, std::ios::beg);
 
