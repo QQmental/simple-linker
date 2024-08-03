@@ -12,14 +12,11 @@
 #include "Archive_file.h"
 #include "util.h"
 #include "Relocatable_file.h"
+#include "Linking_context.h"
 
 constexpr std::size_t gARCHIVE_MAGIC_LEN = nUtil::const_expr_STR_len(ARCHIVE_FILE_MAGIC);
 
-enum class eLink_machine_optinon : uint16_t
-{
-    unknown = 0,
-    elf64lriscv
-};
+
 
 enum class eFile_type :decltype(elf64_hdr::e_type)
 {
@@ -44,8 +41,9 @@ struct Link_option_args
     std::vector<path_of_file_t> library;
     std::vector<path_of_file_t> obj_file;
     std::string output_file = "a.out";
-    eLink_machine_optinon link_machine_optinon = eLink_machine_optinon::unknown;
+    Linking_context::eLink_machine_optinon link_machine_optinon = Linking_context::eLink_machine_optinon::unknown;
 };
+
 
 
 
@@ -54,9 +52,9 @@ static bool Is_archived_file(FILE *file);
 static eFile_type Get_file_type(const elf64_hdr &hdr);
 static std::vector<Link_option_args::path_of_file_t> Find_libraries(const Link_option_args &link_option_args);
 
-static std::string Read_archive_scetion_name(const Archive_file_header &ar_fhdr, const char* str_tbl);
-static void Load_archived_file_section(std::vector<Relocatable_file> &object_file, const std::vector<Link_option_args::path_of_file_t> &lib_path) ;
-static void Collect_rel_file_content(std::vector<Relocatable_file> &object_file, const Link_option_args &link_option_args);
+static std::string_view Read_archive_scetion_name(const Archive_file_header &ar_fhdr, const char* str_tbl);
+static void Load_archived_file_section(Linking_context &linking_ctx, const std::vector<Link_option_args::path_of_file_t> &lib_path) ;
+static void Collect_rel_file_content(Linking_context &linking_ctx, const Link_option_args &link_option_args);
 
 static void Show_link_option_args(const Link_option_args &link_option_args);
 
@@ -65,6 +63,9 @@ static void Show_link_option_args(const Link_option_args &link_option_args);
 
 int main(int argc, char* argv[])
 {
+    for(int i = 1 ; i < argc ; i++)
+        printf("%s\n",argv[i]);
+    printf("\n\n");
     Link_option_args link_option_args ;
 
     Parse_args(&link_option_args, argc - 1, argv+1);
@@ -73,9 +74,10 @@ int main(int argc, char* argv[])
 
     link_option_args.library = Find_libraries(link_option_args);
 
-    std::vector<Relocatable_file> rel_file;
 
-    Collect_rel_file_content(rel_file, link_option_args);
+    Linking_context linking_ctx(Linking_context::eLink_machine_optinon::elf64lriscv);
+
+    Collect_rel_file_content(linking_ctx, link_option_args);
 }
 
 //the first few bytes are read from the file and compared with ARCHIVE_FILE_MAGIC, 
@@ -137,14 +139,14 @@ static std::vector<Link_option_args::path_of_file_t> Find_libraries(const Link_o
     }
 
     if (std::any_of(is_lib_found.begin(), is_lib_found.end(), [](auto val){return val == false;}) == true)
-        FATALF("some libs are not found !");
+        FATALF("%s", "some libs are not found !");
     return ret;
 }
 
-static std::string Read_archive_scetion_name(const Archive_file_header &ar_fhdr, const char* str_tbl)
+static std::string_view Read_archive_scetion_name(const Archive_file_header &ar_fhdr, const char* str_tbl)
 {
-    std::string ret;
-    std::string name(ar_fhdr.file_identifier, sizeof(ar_fhdr.file_identifier));
+    std::string_view ret;
+    std::string_view name(ar_fhdr.file_identifier, sizeof(ar_fhdr.file_identifier));
 
     if (name.substr(0, 1) == "/") //long file name
     {
@@ -155,7 +157,8 @@ static std::string Read_archive_scetion_name(const Archive_file_header &ar_fhdr,
 
         const char *p = &str_tbl[offset];
         while(*p != '\0' && *p != '/')
-            ret.append(std::string(const_cast<char*>(p++), 1)) ;
+            p++;
+        ret = std::string_view(&str_tbl[offset], p-&str_tbl[offset]);
     }
     else //short file name
     {
@@ -167,18 +170,18 @@ static std::string Read_archive_scetion_name(const Archive_file_header &ar_fhdr,
 
 }
 
-static void Load_archived_file_section(std::vector<Relocatable_file> &rel_file, const std::vector<Link_option_args::path_of_file_t> &lib_path)
+static void Load_archived_file_section(Linking_context &linking_ctx, const std::vector<Link_option_args::path_of_file_t> &lib_path)
 {
     for(const auto &path : lib_path)
     {
         FILE *fptr = fopen(path.c_str(), "rb");
         if (fptr == nullptr)
-            FATALF("fail to open the file\n");
+            FATALF("%s", "fail to open the file\n");
 
         if (Is_archived_file(fptr) == false)
             FATALF("%s is not an archived file !\n", path.c_str());
 
-        std::unique_ptr<char[]> str_tbl_sec;
+        std::unique_ptr<const char[]> str_tbl_sec;
 
         while(feof(fptr) == 0)
         {
@@ -187,7 +190,7 @@ static void Load_archived_file_section(std::vector<Relocatable_file> &rel_file, 
             if (fread(&ar_fhdr, sizeof(ar_fhdr), 1, fptr) != 1)
             {
                 if (feof(fptr) == 0)
-                    FATALF("fail to load the header\n");                
+                    FATALF("%s", "fail to load the header\n");                
                 else // it's the end of the file, stop reading it
                     break;
             }
@@ -197,32 +200,34 @@ static void Load_archived_file_section(std::vector<Relocatable_file> &rel_file, 
             // align read size because sections are aligned with 2
             sz += sz%2;
 
-            std::unique_ptr<char[]> section(new char[sz]);
+            auto mem = std::make_unique<char[]>(sz);
 
-            if (fread(section.get(), sizeof(char), sz, fptr) != (std::size_t)sz)
+            if (fread(mem.get(), sizeof(char), sz, fptr) != (std::size_t)sz)
                 FATALF("fail to load the sections, only %u is read\n", sz);
 
             if(Archive_file_header::Is_symtab(ar_fhdr) == true)
                 continue;
             else if (Archive_file_header::Is_strtab(ar_fhdr) == true)
             {
-                str_tbl_sec = std::move(section);
+                str_tbl_sec = std::move(mem);
             }
             else // object file
             {
-                if (Get_file_type(*reinterpret_cast<const elf64_hdr*>(section.get())) != eFile_type::ET_REL)        
+                if (Get_file_type(*reinterpret_cast<const elf64_hdr*>(mem.get())) != eFile_type::ET_REL)        
                     FATALF("%s expected to be a relocation type but it is actully not a rel file !", path.c_str());
 
-                std::string name = Read_archive_scetion_name(ar_fhdr, reinterpret_cast<const char*>(str_tbl_sec.get()));
-                //rel_file.push_back(std::move(section));
+                std::string_view name = Read_archive_scetion_name(ar_fhdr, reinterpret_cast<const char*>(str_tbl_sec.get()));
+                //std::cout << name << "\n";
+                linking_ctx.insert_object_file(Relocatable_file(std::move(mem), std::string(name)), true);
             }
         }
         fclose(fptr);
     }
 }
 
-static void Collect_rel_file_content(std::vector<Relocatable_file> &rel_file, const Link_option_args &link_option_args)
+static void Collect_rel_file_content(Linking_context &linking_ctx, const Link_option_args &link_option_args)
 {
+    // read .o files
     for(const auto &path : link_option_args.obj_file)
     {
         std::ifstream file(path, std::ios::binary);
@@ -232,36 +237,24 @@ static void Collect_rel_file_content(std::vector<Relocatable_file> &rel_file, co
         
         file.seekg(0, std::ios::end);
         std::size_t file_size =  file.tellg();
-        
-        auto new_obj_file = std::unique_ptr<char[]>(new char[file_size]);
+
+        auto mem = new char[file_size];
 
         file.seekg(0, std::ios::beg);
 
-        file.read(reinterpret_cast<char*>(new_obj_file.get()), file_size);
+        file.read(mem, file_size);
         
         file.close();
 
-        if (Get_file_type(*reinterpret_cast<const elf64_hdr*>(new_obj_file.get())) != eFile_type::ET_REL)        
+        if (Get_file_type(*reinterpret_cast<const elf64_hdr*>(mem)) != eFile_type::ET_REL)        
             FATALF("%s expected to be a relocation type but it is actully not a rel file !", path.c_str());
         
-        rel_file.push_back(std::move(new_obj_file));
-    } 
-    
-    Load_archived_file_section(rel_file, link_option_args.library);
-
-    int x = 0;
-    for(auto &item : rel_file)
-    {
-        for(std::size_t i = 0 ; i < item.section_hdr_table().header_count() ; i++)
-        {
-            auto &shdr = item.section_hdr_table().headers()[i];
-            if (shdr.sh_type == SHT_RISC_V_ATTRIBUTES)
-            {
-                x++;
-            }
-        }
-
+        linking_ctx.insert_object_file({std::unique_ptr<char[]>(mem), path}, false);
     }
+    
+    Load_archived_file_section(linking_ctx, link_option_args.library);
+
+    linking_ctx.link();
 }
 
 static void Parse_args(Link_option_args *dst, int argc, char* argv[])
@@ -302,9 +295,9 @@ static void Parse_args(Link_option_args *dst, int argc, char* argv[])
         else if (memcmp(argv[i], "-m", 2) == 0 && argv[i][2] != '\0') // it should not be just "-m"
         {
             if (strcmp(argv[i], "-melf64lriscv") == 0)
-                link_option_args.link_machine_optinon = eLink_machine_optinon::elf64lriscv;
+                link_option_args.link_machine_optinon = Linking_context::eLink_machine_optinon::elf64lriscv;
             else
-                link_option_args.link_machine_optinon = eLink_machine_optinon::unknown;
+                link_option_args.link_machine_optinon = Linking_context::eLink_machine_optinon::unknown;
 
             printf("m option %s\n", &argv[i][2]);
         }

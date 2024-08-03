@@ -9,8 +9,13 @@ Numeric values are encoded in ASCII and all values right-padded with ASCII space
 archive file format: [ARCHIVE_FILE_MAGIC][ar_fhdr][section][ar_fhdr][section]...[ar_fhdr][section]
 
 each section would be either a string table, symbol table, or relocatable file
-if it's a string table, it's used for files having long name
+if it's a string table, it's used for files which have long name
 */
+
+// although ARCHIVE_FILE_MAGIC is represented as a ascii string here, it's not followed by a '\0' in the archive file
+// just compare the first 8 byte
+#define ARCHIVE_FILE_MAGIC "!<arch>\n"
+
 struct Archive_file_header
 {
     char file_identifier[16];    // detect type of the following section, ascii

@@ -15,39 +15,42 @@ static void Init_guest_RISC_V_attributes(Attributes &attr, const uint8_t *sh_RIS
 
 
 
-Relocatable_file::Relocatable_file(std::unique_ptr<char[]> data) : m_section_hdr_table(data.get()), m_data(std::move(data))
+Relocatable_file::Relocatable_file(std::unique_ptr<char[]> data, std::string name) 
+                                   : m_section_hdr_table(data.get()), m_data(std::move(data)), m_name(std::move(name))
 {
-    std::size_t symtab_idx = -1;
+    m_linking_mdata = Linking_mdata{(std::size_t)-1, (std::size_t)-1, (std::size_t)-1, {}};
 
     for(std::size_t i = 0 ; i < m_section_hdr_table.header_count() ; i++)
     {
-        if (m_section_hdr_table.headers()[i].sh_type == SHT_SYMTAB)
+        auto &shdr = section_hdr_table().headers()[i];
+
+        switch (shdr.sh_type)
         {
-            symtab_idx = i;
+            case SHT_SYMTAB:
+                m_linking_mdata.symtab_idx = i;
+            break;
+
+            case SHT_SYMTAB_SHNDX:
+                m_linking_mdata.symtab_shndx = i;
+            break;
+
+            case SHT_RISC_V_ATTRIBUTES:
+                Init_guest_RISC_V_attributes(m_linking_mdata.attr, reinterpret_cast<const uint8_t *>(section(i)));
+            break;
+
+            default:
             break;
         }
     }
 
-    if (symtab_idx == (std::size_t)-1)
-        FATALF("symbol table index is not found !");
-
-    m_symtab_idx = symtab_idx;
-
-    m_symbol_table = std::unique_ptr<nRSIC_V_linking_data::Symbol_table>(new nRSIC_V_linking_data::Symbol_table(
-                                                                            m_data.get(), 
-                                                                            m_section_hdr_table.headers()[m_symtab_idx], 
-                                                                            m_section_hdr_table));
-
-    for(std::size_t i = 0 ; i < section_hdr_table().header_count() ; i++)
+    if (m_linking_mdata.symtab_idx != (std::size_t)-1)
     {
-        auto &shdr = section_hdr_table().headers()[i];
-        if (shdr.sh_type == SHT_SYMTAB_SHNDX)
-            m_symtab_shndx = i;
-        else if (shdr.sh_type == SHT_RISC_V_ATTRIBUTES)
-            Init_guest_RISC_V_attributes(m_attr, reinterpret_cast<const uint8_t *>(section(i)));
+        m_symbol_table = std::unique_ptr<nRSIC_V_linking_data::Symbol_table>(new nRSIC_V_linking_data::Symbol_table(
+                                                                             m_data.get(), 
+                                                                             m_section_hdr_table.headers()[m_linking_mdata.symtab_idx], 
+                                                                             m_section_hdr_table));
+        m_linking_mdata.first_global =  m_section_hdr_table.headers()[m_linking_mdata.symtab_idx].sh_info;                                                                             
     }
-
-
 }
 
 

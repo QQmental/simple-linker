@@ -32,48 +32,64 @@ link_test_args = -plugin \
 
 CC = g++
 
-CPP_FLAG = -std=c++17 -pedantic -Wall -MMD -g
+CPP_FLAG = -std=c++17 -pedantic -Wall -MMD -g -O0 -Wpedantic
 
-SRCS = Relocatable_file.cpp
+include_path = $(addprefix -I,./)
 
-OBJS = $(SRCS:%.cpp=%.o)
+Build = build
+
+SRCS = main.cpp \
+       Relocatable_file.cpp \
+       Linking_context.cpp \
+       Input_file.cpp \
+	   Mergeable_section_piece.cpp
+
+OBJS = $(addprefix $(Build)/,$(SRCS:%.cpp=%.o)) 
 
 DEPS = $(OBJS:%.o=%.d)
 
-BINS = ld gdb_ld ld2
+BINS = ld gdb_ld
 
 all: $(BINS)
-	riscv64-unknown-elf-gcc test3.c -g -O0 -march=rv64imafc -mabi=lp64 -c -o test3.o
-	riscv64-unknown-elf-gcc test3.o -B. -static -g -O0 -march=rv64imafc -mabi=lp64 -o test3.elf	
+	riscv64-unknown-elf-gcc test3.c -O2 -static -march=rv64imafc -mabi=lp64 -c -o test3.o
+	riscv64-unknown-elf-gcc test3.o -B. -static -O2 -march=rv64imafc -mabi=lp64 -o test3.elf	
 
-example.o:example.cpp
-	$(CC) $< $(CPP_FLAG) -c -o $@
+$(Build)/main.o:src/main.cpp
+	$(CC) $< $(CPP_FLAG) $(include_path) -c -o $@
 
-main.o:main.cpp
-	$(CC) $< $(CPP_FLAG) -c -o $@
+$(Build)/Relocatable_file.o: src/Relocatable_file.cpp
+	$(CC) $< $(CPP_FLAG) $(include_path) -c -o $@
 
-Relocatable_file.o: Relocatable_file.cpp
-	$(CC) $< $(CPP_FLAG) -c -o $@
+$(Build)/Linking_context.o: src/Linking_context.cpp
+	$(CC) $< $(CPP_FLAG) $(include_path) -c -o $@
 
-ld: example.o $(OBJS)
-	$(CC) $^ -fsanitize=undefined,address $(CPP_FLAG) -o $@
+$(Build)/Input_file.o: src/Input_file.cpp
+	$(CC) $< $(CPP_FLAG) $(include_path) -c -o $@
 
-ld2: main.o $(OBJS)
-	$(CC) $^ -fsanitize=undefined,address $(CPP_FLAG) -o $@
+$(Build)/Mergeable_section_piece.o: src/Mergeable_section_piece.cpp
+	$(CC) $< $(CPP_FLAG) $(include_path) -c -o $@
 
-gdb_ld: main.o $(OBJS)
-	$(CC) $^ -fsanitize=undefined $(CPP_FLAG) -o $@
+ld: $(OBJS)
+	$(CC) $^ $(CPP_FLAG) -o $@
 
-linking: ld2
-	./ld2 $(link_test_args)
+gdb_ld: $(OBJS)
+	$(CC) $^ $(CPP_FLAG) -o $@
+	cp $@ third_proj/a-b-tree
+
+run_example: ld
+	valgrind --leak-check=full ./ld $(link_test_args)
+
+linking: ld
+	./ld $(link_test_args)
 
 run_gdb: gdb_ld
-	gdb --args ./gdb_ld $(link_test_args)
+#	gdb --args /usr/local/bin/mold $(link_test_args) --no-fork
+	gdb --args ./gdb_ld  $(link_test_args)
 	
 clean:
 	$(shell rm -rf ./test3.elf)
-	$(shell rm -rf $(wildcard ./*.d))
-	$(shell rm -rf $(wildcard ./*.o))
+	$(shell rm -rf $(OBJS))
+	$(shell rm -rf $(DEPS))
 	$(shell rm -rf $(BINS))
 
 -include $(DEPS)

@@ -137,6 +137,7 @@ typedef struct elf64_hdr {
 #define ELFOSABI_NONE	0
 #define ELFOSABI_LINUX	3
 
+#define EM_X86_64	62	/* AMD x86-64 architecture */
 #define EM_RISC_V 243
 
 typedef struct elf32_phdr{
