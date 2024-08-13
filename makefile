@@ -34,7 +34,7 @@ CC = g++
 
 CPP_FLAG = -std=c++17 -pedantic -Wall -MMD -g -O0 -Wpedantic
 
-include_path = $(addprefix -I,./)
+INCLUDE = $(addprefix -I,include ./)
 
 Build = build
 
@@ -42,7 +42,8 @@ SRCS = main.cpp \
        Relocatable_file.cpp \
        Linking_context.cpp \
        Input_file.cpp \
-	   Mergeable_section_piece.cpp
+	   Mergeable_section.cpp \
+	   Merged_section.cpp
 
 OBJS = $(addprefix $(Build)/,$(SRCS:%.cpp=%.o)) 
 
@@ -55,19 +56,22 @@ all: $(BINS)
 	riscv64-unknown-elf-gcc test3.o -B. -static -O2 -march=rv64imafc -mabi=lp64 -o test3.elf	
 
 $(Build)/main.o:src/main.cpp
-	$(CC) $< $(CPP_FLAG) $(include_path) -c -o $@
+	$(CC) $< $(CPP_FLAG) $(INCLUDE) -c -o $@
 
 $(Build)/Relocatable_file.o: src/Relocatable_file.cpp
-	$(CC) $< $(CPP_FLAG) $(include_path) -c -o $@
+	$(CC) $< $(CPP_FLAG) $(INCLUDE) -c -o $@
 
 $(Build)/Linking_context.o: src/Linking_context.cpp
-	$(CC) $< $(CPP_FLAG) $(include_path) -c -o $@
+	$(CC) $< $(CPP_FLAG) $(INCLUDE) -c -o $@
 
 $(Build)/Input_file.o: src/Input_file.cpp
-	$(CC) $< $(CPP_FLAG) $(include_path) -c -o $@
+	$(CC) $< $(CPP_FLAG) $(INCLUDE) -c -o $@
 
-$(Build)/Mergeable_section_piece.o: src/Mergeable_section_piece.cpp
-	$(CC) $< $(CPP_FLAG) $(include_path) -c -o $@
+$(Build)/Mergeable_section.o: src/Mergeable_section.cpp
+	$(CC) $< $(CPP_FLAG) $(INCLUDE) -c -o $@
+
+$(Build)/Merged_section.o: src/Merged_section.cpp
+	$(CC) $< $(CPP_FLAG) $(INCLUDE) -c -o $@
 
 ld: $(OBJS)
 	$(CC) $^ $(CPP_FLAG) -o $@

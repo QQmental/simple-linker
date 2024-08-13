@@ -8,13 +8,21 @@
 #include "Linking_context.h"
 #include "Mergeable_section.h"
 #include "ELF_util.h"
-
+#include "Merged_section.h"
 
 static void Init_local_symbols(std::unique_ptr<Symbol[]> &dst, const Relocatable_file &rel_file, std::size_t n_local_sym);
 
-static Mergeable_section Split_section(const Relocatable_file &file, Linking_context &ctx, std::size_t shndx);
+static std::unique_ptr<Mergeable_section> Split_section(const Relocatable_file &file, Linking_context &ctx, const Input_section &input_sec);
 
-static void Sort_relocation(const Input_file &input_file);
+[[nodiscard]] static Merged_section* 
+Get_merged_final_dst(Linking_context &ctx,
+                     std::string_view name,
+                     std::size_t type, 
+                     std::size_t flags, 
+                     std::size_t entsize, 
+                     std::size_t addralign);
+
+static void Sort_relocation(Input_file &input_file);
 
 static void Init_local_symbols(std::unique_ptr<Symbol[]> &dst, const Relocatable_file &rel_file, std::size_t n_local_sym)
 {
@@ -32,6 +40,33 @@ static void Init_local_symbols(std::unique_ptr<Symbol[]> &dst, const Relocatable
         sym.val = elf_sym.st_value;
   
         dst[i] = std::move(sym);
+    }
+}
+
+static void Sort_relocation(Input_file &input_file)
+{
+    for(std::size_t i = 0 ; i < input_file.src().section_hdr_table().header_count() ; i++)
+    {
+        auto &shdr = input_file.src().section_hdr(i);
+
+        if (shdr.sh_type == SHT_REL)
+        {
+            Elf64_Rel *rel = reinterpret_cast<Elf64_Rel*>(input_file.src().section(i));
+            auto end = rel + shdr.sh_size / shdr.sh_entsize;
+            auto cmp = [](const Elf64_Rel &lhs, const Elf64_Rel &rhs){return lhs.r_offset < rhs.r_offset;};
+            if (std::is_sorted(rel, end, cmp) == false)
+                std::sort(rel, end, cmp);
+        }
+        else if (shdr.sh_type == SHT_RELA)
+        {
+            Elf64_Rela *rela = reinterpret_cast<Elf64_Rela*>(input_file.src().section(i));
+            auto end = rela + shdr.sh_size / shdr.sh_entsize;
+            auto cmp = [](const Elf64_Rela &lhs, const Elf64_Rela &rhs){return lhs.r_offset < rhs.r_offset;};
+            if (std::is_sorted(rela, end, cmp) == false)
+                std::sort(rela, end, cmp);
+        }
+        else
+            continue;
     }
 }
 
@@ -99,8 +134,6 @@ Input_file::Input_file(Relocatable_file &src) : m_src(&src)
             FATALF("m_section_relocate_state_list[%d]: %d is not relocatable??", shdr.sh_info, m_section_relocate_state_list[shdr.sh_info]);
 
         m_input_section_list[shdr.sh_info].relsec_idx = i;
-
-       // std::cout << name() << " link " << m_src->section_hdr(i).sh_link << "\n";
     }
 
     Sort_relocation(*this);
@@ -138,25 +171,41 @@ void Input_file::Put_global_symbol(Linking_context &ctx)
     }
 }
 
-// it's copied from https://github.com/rui314/mold
-static size_t find_null(std::string_view data, std::size_t pos, std::size_t entsize)
+[[nodiscard]] static Merged_section* 
+Get_merged_final_dst(Linking_context &ctx,
+                     std::string_view name,
+                     std::size_t type, 
+                     std::size_t flags, 
+                     std::size_t entsize, 
+                     std::size_t addralign)
 {
-    if (entsize == 1)
-    return data.find('\0', pos);
+    flags = flags & ~(uint64_t)SHF_GROUP & ~(uint64_t)SHF_COMPRESSED;
 
-    for (; pos <= data.size() - entsize; pos += entsize)
-    {
-        if (data.substr(pos, entsize).find_first_not_of('\0') == data.npos)
-            return pos;
-    }
-  return data.npos;
-}
+    std::unique_ptr<char[]> maybe_new_name;
+    
+    if (nELF_util::get_merged_output_name(&maybe_new_name, name, flags, entsize, addralign) == true)
+        name = ctx.Insert_string(std::move(maybe_new_name));
 
-static Mergeable_section Split_section(const Relocatable_file &file, Linking_context &ctx, std::size_t shndx)
+    Linking_context::Output_merged_section_id id;
+    id.name = name;
+    id.type = type;
+    id.flags = flags;
+    id.entsize = entsize;
+    auto it = ctx.merged_section_map.find(id);
+   
+    if (it != ctx.merged_section_map.end())
+        return it->second.get();
+
+    auto ptr = std::make_unique<Merged_section>(name, flags, type, entsize);
+    
+    return ctx.merged_section_map.insert(std::make_pair(id, std::move(ptr))).first->second.get();
+}             
+
+static std::unique_ptr<Mergeable_section> Split_section(const Relocatable_file &file, Linking_context &ctx, const Input_section &input_sec)
 {
-    Mergeable_section ret;
+    std::unique_ptr<Mergeable_section> ret;
 
-    auto &shdr = file.section_hdr(shndx);
+    auto &shdr = input_sec.shdr();
 
     std::size_t entsize = shdr.sh_entsize;
 
@@ -164,34 +213,37 @@ static Mergeable_section Split_section(const Relocatable_file &file, Linking_con
         entsize = (shdr.sh_flags & SHF_STRINGS) ? 1 : (int)shdr.sh_addralign;
 
     if (entsize == 0)
-        return ret;
+        return nullptr;
 
-    ret.data = std::string_view{file.section(shndx), shdr.sh_size};
-    ret.p2_align = nUtil::to_p2align(file.section_hdr(shndx).sh_addralign);
-
-    if (ret.data.size() > UINT32_MAX)
-        FATALF("the mergeable section size %ld, is too large",ret.data.size());
-
-    std::size_t addralign = shdr.sh_addralign;
-
+    uint64_t addralign = shdr.sh_addralign;
     if (addralign == 0)
         addralign = 1;
+    
+    ret = std::make_unique<Mergeable_section>();
+
+    ret->data = input_sec.data;
+    ret->p2_align = nUtil::to_p2align(shdr.sh_addralign);
+
+    ret->final_dst = Get_merged_final_dst(ctx, input_sec.name(), shdr.sh_type, shdr.sh_flags, entsize, addralign);
+
+    if (ret->data.size() > UINT32_MAX)
+        FATALF("the mergeable section size %ld, is too large",ret->data.size());
 
     auto push_frag_info = [&ret](std::size_t start, std::size_t end) 
     {
-        ret.frag_offset_list.push_back(start);
-        ret.frag_hash_list.push_back(std::hash<std::string_view>{}(ret.data.substr(start, end - start)));
+        ret->piece_offset_list.push_back(start);
+        ret->piece_hash_list.push_back(std::hash<std::string_view>{}(ret->data.substr(start, end - start)));
     };
 
-    if (shdr.sh_flags & SHF_STRINGS)
+    if (input_sec.shdr().sh_flags & SHF_STRINGS)
     {
-        for(std::size_t pos = 0 ; pos < ret.data.size() ;)
+        for(std::size_t pos = 0 ; pos < ret->data.size() ;)
         {    
-            size_t end = find_null(ret.data, pos, entsize);
+            size_t end = nUtil::Find_null(ret->data, pos, entsize);
             
-            if (end == ret.data.npos)
+            if (end == ret->data.npos)
             {
-                std::cout << ret.data;
+                std::cout << ret->data;
                 FATALF(":string is not null terminated");
             }
             push_frag_info(pos, end);
@@ -200,43 +252,19 @@ static Mergeable_section Split_section(const Relocatable_file &file, Linking_con
     }
     else
     {
-        if (ret.data.size() % entsize)
-            FATALF("%ld : section size is not multiple of sh_entsize", ret.data.size());
+        if (ret->data.size() % entsize)
+            FATALF("%ld : section size is not multiple of sh_entsize", ret->data.size());
 
-        ret.frag_offset_list.reserve(ret.data.size() / entsize);
+        ret->piece_offset_list.reserve(ret->data.size() / entsize);
 
-        for (std::size_t pos = 0; pos < ret.data.size(); pos += entsize)
+        for (std::size_t pos = 0; pos < ret->data.size(); pos += entsize)
             push_frag_info(pos, pos + entsize);
     }
     return ret;
 }
 
-static void Sort_relocation(const Input_file &input_file)
-{
-    for(std::size_t i = 0 ; i < input_file.src().section_hdr_table().header_count() ; i++)
-    {
-        auto &shdr = input_file.src().section_hdr(i);
 
-        if (shdr.sh_type == SHT_REL)
-        {
-            Elf64_Rel *rel = reinterpret_cast<Elf64_Rel*>(input_file.src().section(i));
-            auto end = rel + shdr.sh_size / shdr.sh_entsize;
-            auto cmp = [](const Elf64_Rel &lhs, const Elf64_Rel &rhs){return lhs.r_offset < rhs.r_offset;};
-            if (std::is_sorted(rel, end, cmp) == false)
-                std::sort(rel, end, cmp);
-        }
-        else if (shdr.sh_type == SHT_RELA)
-        {
-            Elf64_Rela *rela = reinterpret_cast<Elf64_Rela*>(input_file.src().section(i));
-            auto end = rela + shdr.sh_size / shdr.sh_entsize;
-            auto cmp = [](const Elf64_Rela &lhs, const Elf64_Rela &rhs){return lhs.r_offset < rhs.r_offset;};
-            if (std::is_sorted(rela, end, cmp) == false)
-                std::sort(rela, end, cmp);
-        }
-        else
-            continue;
-    }
-}
+
 
 void Input_file::Init_mergeable_section(Linking_context &ctx)
 {
@@ -251,15 +279,34 @@ void Input_file::Init_mergeable_section(Linking_context &ctx)
 
         m_section_relocate_state_list[i] = eRelocate_state::mergeable;
 
-        //std::cout << m_src->section_hdr_table().string_table().data() + shdr.sh_name << " megeable\n";
+        m_mergeable_section_list[i] = Split_section(*m_src, ctx, m_input_section_list[i]);
+    }
+}
 
-        m_mergeable_section_list[i] = std::make_unique<Mergeable_section>(Split_section(*m_src, ctx, i));
+void Input_file::Collect_mergeable_section()
+{
+    for (std::unique_ptr<Mergeable_section> &m : m_mergeable_section_list)
+    {
+        if (m)
+        {
+            m->fragment_list.resize(m->piece_offset_list.size());
+
+            for (std::size_t i = 0; i < m->piece_offset_list.size(); i++)
+            {
+                Merged_section::Section_fragment *frag = m->final_dst->Insert(m->Get_contents(i), m->piece_hash_list[i], m->p2_align);
+                m->fragment_list[i] = frag;
+            }
+
+            // Reclaim memory as we'll never use this vector again
+            m->piece_hash_list.clear();
+            m->piece_hash_list.shrink_to_fit();
+        }
     }
 }
 
 void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
 {
-    // Attach section pieces to symbols.
+    // Attach mergeable section pieces to symbols.
     for(std::size_t i = 1 ; i < src().symbol_table()->count() ; i++)
     {
         Symbol *sym = symbol_list[i];
@@ -270,16 +317,16 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
 
         auto shndx = src().get_shndx(esym);
 
-        if (m_section_relocate_state_list[shndx] != eRelocate_state::mergeable)
+        if (   m_section_relocate_state_list[shndx] != eRelocate_state::mergeable
+            || m_mergeable_section_list[shndx] == nullptr
+            || m_mergeable_section_list[shndx]->piece_offset_list.empty() == true)
             continue;
 
-        if (m_mergeable_section_list[shndx]->frag_offset_list.empty() == true)
-            continue;
-
-        std::tie(sym->fragment, sym->val) 
-            = m_mergeable_section_list[shndx]->get_fragment(esym.st_value);
+        std::tie(sym->mergeable_section_piece, sym->val) 
+            = m_mergeable_section_list[shndx]->Get_mergeable_piece(esym.st_value);
     }
 
+    // calculate the number of mergeable section symbol
     uint64_t nfrag_syms = 0;
     for(std::size_t i = 0 ; i < m_input_section_list.size() ; i++)
     {
@@ -300,7 +347,7 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
         }
     }
 
-    frag_symbol_list.resize(nfrag_syms);
+    mergeable_section_symbol_list.resize(nfrag_syms);
 
     // For each relocation referring a mergeable section symbol, we create
     // a new dummy non-section symbol and redirect the relocation to the
@@ -320,31 +367,31 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
             auto &esym = src().symbol_table()->data(rel.sym());
 
             if (   ELF64_ST_TYPE(esym.st_info) != STT_SECTION 
-                || m_section_relocate_state_list[m_src->get_shndx(esym)] != eRelocate_state::mergeable)
+                || m_mergeable_section_list[m_src->get_shndx(esym)].get() == nullptr)
                 continue;
 
             Mergeable_section &msection = *m_mergeable_section_list[m_src->get_shndx(esym)].get();
           
-            std::string_view frag_data;
-            std::size_t frag_offset;
+            Merged_section::Section_fragment *mergeable_section_piece;
+            std::size_t piece_offset;
 
-            std::tie(frag_data, frag_offset) =  msection.get_fragment(esym.st_value + rel.r_addend);
+            std::tie(mergeable_section_piece, piece_offset) = msection.Get_mergeable_piece(esym.st_value + rel.r_addend);
 
-            if (frag_data.empty() == true)
+            if (mergeable_section_piece == nullptr)
                 FATALF("%s", "bad fragment relocated");
 
-            auto &new_sym = frag_symbol_list[idx];
+            auto &new_sym = mergeable_section_symbol_list[idx];
             new_sym = Symbol(*m_src, rel.sym());
             new_sym.name = "<fragment>";
             new_sym.sym_idx = rel.sym();
-            new_sym.fragment = frag_data;
-            new_sym.val = frag_offset - rel.r_addend;
+            new_sym.mergeable_section_piece = mergeable_section_piece;
+            new_sym.val = piece_offset - rel.r_addend;
             rel.Set_sym(m_src->symbol_table()->count() + idx); // redirect the relocation to the new symbol
             idx++;
         }
     }
-    assert(idx == frag_symbol_list.size());
+    assert(idx == mergeable_section_symbol_list.size());
 
-    for(auto &frag_sym : frag_symbol_list)
+    for(auto &frag_sym : mergeable_section_symbol_list)
         symbol_list.push_back(&frag_sym);
 }

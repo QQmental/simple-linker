@@ -14,10 +14,7 @@ struct ELF_Rel
     {
         src = reinterpret_cast<char*>(&rel_src);
 
-        auto self = reinterpret_cast<Elf64_Rel*>(src);
-
         r_addend = 0;
-
 
         r_sym = ELF64_R_SYM(Get_info());
         r_type = ELF64_R_TYPE(Get_info());
@@ -112,7 +109,7 @@ get_output_name(std::string_view name, uint64_t flags)
     if (flags & SHF_MERGE)
         return name;
 
-    static std::string_view prefixes[] = 
+    static const std::string_view prefixes[] = 
     {
         ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.", ".bss.",
         ".init_array.", ".fini_array.", ".tbss.", ".tdata.", ".gcc_except_table.",
@@ -123,14 +120,44 @@ get_output_name(std::string_view name, uint64_t flags)
     {
         std::string_view stem = prefix.substr(0, prefix.size() - 1);
 
-        // name is equal to 'stem' or has the prefix
-        if (name == stem || (name.size() >= prefix.size() && name.substr(0, prefix.size()) == prefix))
+        // name is equal to 'stem' or has a prefix 'stem'
+        if (name.rfind(stem, 0) == 0)
             return stem;
     }
 
     return name;
 }
 
+
+// return true if merged output name is same as 'name',
+// otherwise return false and the new output name is set in 'dst'
+// modified from https://github.com/rui314/mold 
+inline bool get_merged_output_name(std::unique_ptr<char[]> *dst, 
+                                   std::string_view name, 
+                                   int64_t flags,
+                                   int64_t entsize, 
+                                   int64_t addralign) 
+{
+
+  // GCC seems to create sections named ".rodata.strN.<mangled-symbol-name>.M".
+  // We want to eliminate the symbol name part from the section name.
+  if ((flags & SHF_STRINGS) && name.rfind(".rodata.", 0) == 0)
+  {
+    std::string name2 = std::string(".rodata.str") 
+                        + std::to_string(entsize) 
+                        + "." 
+                        + std::to_string(addralign);
+    if (name == name2)
+        return false;
+
+    *dst = std::make_unique<char[]>(name2.size() + 1);
+    memcpy(dst->get(), name2.c_str(), name2.size() + 1);
+
+    return true;
+  }
+
+  return false;
+}
 
 }
 

@@ -50,7 +50,20 @@ static void Reference_dependent_file(Input_file &input_file,
     }
 }
 
+template <typename File_list_t>
+void Remove_unused_file(File_list_t &dst, const std::vector<bool> &is_alive)
+{
+    auto cmp_gen = [&is_alive](auto begin) 
+    {
+        return [&is_alive, begin](auto &item) -> bool
+        {
+            return is_alive[&item - &(*begin)] == false;
+        };
+    };
 
+    auto remove_start = std::remove_if(dst.begin(), dst.end(), cmp_gen(dst.begin()));
+    dst.erase(remove_start, dst.end());
+}
 
 void Linking_context::link()
 {
@@ -68,31 +81,20 @@ void Linking_context::link()
             Reference_dependent_file(m_input_file[i], *this, m_is_alive, {m_input_file.data(), m_input_file.data() + m_input_file.size()});
     }
 
-    {
-        auto cmp_gen = [this](auto begin) 
-        {
-            return [this, begin](auto &item) -> bool
-            {
-                return this->m_is_alive[&item - &(*begin)] == false;
-            };
-        };
-        {
-            auto remove_start = std::remove_if(m_input_file.begin(), m_input_file.end(), cmp_gen(m_input_file.begin()));
-            m_input_file.erase(remove_start, m_input_file.end());
-        }
-
-        {
-            auto remove_start = std::remove_if(m_rel_file.begin(), m_rel_file.end(), cmp_gen(m_rel_file.begin()));
-            m_rel_file.erase(remove_start, m_rel_file.end());
-        }
-    }
-
+    Remove_unused_file(m_input_file, m_is_alive);
+    Remove_unused_file(m_rel_file, m_is_alive);
     m_is_alive.clear();
     
     for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
         m_input_file[i].Init_mergeable_section(*this);
 
     for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
+        m_input_file[i].Collect_mergeable_section();
+
+    for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
         m_input_file[i].Resolve_sesction_pieces(*this);
+
+    for(auto &item : merged_section_map)
+        item.second->Aggregate_section_fragment();
 }
 

@@ -37,7 +37,7 @@ public:
     
     const nRSIC_V_linking_data::Section_hdr_table& section_hdr_table() const {return m_section_hdr_table;}
     const elf64_shdr&  section_hdr(std::size_t idx) const {return section_hdr_table().headers()[idx];}
-    char* section(std::size_t idx) const {return m_data.get() + section_hdr(idx).sh_offset;}
+    char* section(std::size_t idx) {return m_data.get() + section_hdr(idx).sh_offset;}
     std::size_t section_size(std::size_t idx) const {return section_hdr(idx).sh_size;}
 
     // return nullptr if this object file has no symbol table
@@ -61,11 +61,17 @@ inline std::size_t Relocatable_file::get_shndx(const Elf64_Sym &sym) const
     assert(&m_symbol_table->data(0) <= &sym);
     assert(&m_symbol_table->data(0) + m_symbol_table->count() > &sym);
 
-    
-    const Elf32_Word *vals = reinterpret_cast<const Elf32_Word *>(section(linking_mdata().symtab_shndx));
+    char *sec = const_cast<Relocatable_file*>(this)->section(linking_mdata().symtab_shndx); //nothing is modified, fine
+
+    const Elf32_Word *vals = reinterpret_cast<const Elf32_Word *>(sec);
 
     if (sym.st_shndx == SHN_XINDEX)
-        return vals[&sym - &m_symbol_table->data(0)];
+    {
+        Elf32_Word ret;
+        memcpy(&ret, vals + (&sym - &m_symbol_table->data(0)), sizeof(ret));
+        return ret;
+    }
+
 
     return sym.st_shndx;
 }

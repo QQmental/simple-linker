@@ -2,6 +2,9 @@
 #include "Relocatable_file.h"
 #include <string_view>
 #include "ELF_util.h"
+#include "Merged_section.h"
+
+
 struct Symbol
 {
 public:
@@ -22,7 +25,7 @@ public:
     Elf64_Addr val;
 
     const Relocatable_file *m_rel_file;
-    std::string_view fragment;
+    Merged_section::Section_fragment *mergeable_section_piece;
     // index of this symbol in the relocatable file
     std::size_t sym_idx;
     std::string_view name;

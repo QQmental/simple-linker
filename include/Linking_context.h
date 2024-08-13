@@ -8,7 +8,10 @@
 #include "elf/ELF.h"
 #include "Relocatable_file.h"
 #include "Input_file.h"
+#include "Merged_section.h"
 #include "third_party/Spin_lock.h"
+
+
 
 struct Mergeable_section;
 
@@ -27,7 +30,8 @@ public:
         Input_file *input_file;
     };
 
-    Linking_context(eLink_machine_optinon maching_opt) : m_link_machine_optinon(maching_opt){}
+    Linking_context(eLink_machine_optinon maching_opt)
+                   :m_link_machine_optinon(maching_opt){}
 
     void insert_object_file(Relocatable_file src, bool is_from_lib)
     {
@@ -66,6 +70,14 @@ public:
 
     void link();
 
+    // str should be a null-terminated string
+    // after inserted, it's returned as a string_view
+    std::string_view Insert_string(std::unique_ptr<char[]> str)
+    {
+        std::string_view ret{str.get()};
+        m_string_pool.push_back(std::move(str));
+        return ret;
+    }
 
     eLink_machine_optinon maching_option() const {return m_link_machine_optinon;}
 
@@ -77,5 +89,59 @@ private:
     std::vector<Input_file> m_input_file;
     std::unordered_map<std::string_view, linking_package> m_global_symbol_map;
     eLink_machine_optinon m_link_machine_optinon;
+    std::vector<std::unique_ptr<char[]>> m_string_pool;
+
+public: 
+    struct Output_merged_section_id
+    {
+        Output_merged_section_id() = default;
+
+        Output_merged_section_id(const Merged_section &src);
+
+        Output_merged_section_id(const Output_merged_section_id &src) = default;
+        ~Output_merged_section_id() = default;
+        
+        bool operator==(const Output_merged_section_id &src) const;   
+        
+        struct Hash_func
+        {
+            size_t operator() (const Output_merged_section_id& id) const;
+        };
+
+        std::string_view name;
+        decltype(Elf64_Shdr::sh_flags) flags;
+        decltype(Elf64_Shdr::sh_type) type;
+        decltype(Elf64_Shdr::sh_entsize) entsize;
+    };
+
+
+    std::unordered_map<Output_merged_section_id, std::unique_ptr<Merged_section>, Output_merged_section_id::Hash_func> merged_section_map;
+
+private:
     Spin_lock m_lock;
 };
+
+inline 
+Linking_context::Output_merged_section_id::
+Output_merged_section_id(const Merged_section &src) 
+                        :name(src.name), 
+                         flags(src.shdr.sh_flags), 
+                         type(src.shdr.sh_type), 
+                         entsize(src.shdr.sh_entsize){}
+
+inline bool Linking_context::Output_merged_section_id::operator==(const Output_merged_section_id &src) const
+{
+    return  src.name == name
+         && src.flags == flags
+         && src.type == type
+         && src.entsize == entsize;
+}
+
+
+inline size_t Linking_context::Output_merged_section_id::Hash_func::operator() (const Output_merged_section_id& id) const
+{
+    return  std::hash<std::string_view>()(id.name)
+          ^ std::hash<decltype(id.flags)>{}(id.flags)
+          ^ std::hash<decltype(id.type)>{}(id.type)
+          ^ std::hash<decltype(id.entsize)>{}(id.entsize);
+}

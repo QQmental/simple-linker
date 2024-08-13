@@ -8,7 +8,7 @@ struct Input_section
 public:
     Input_section() = default;
 
-    Input_section(const Relocatable_file &rel_file, std::size_t shndx) 
+    Input_section(Relocatable_file &rel_file, std::size_t shndx) 
                 : rel_file(&rel_file), 
                   shndx(shndx), 
                   data(rel_file.section(shndx), rel_file.section_hdr(shndx).sh_size){}
@@ -16,6 +16,7 @@ public:
 
     auto const& shdr() const {return rel_file->section_hdr(shndx);}
 
+    // if this section has no relocation section, return 0
     std::size_t rel_count() const 
     {
         if (relsec_idx == (std::size_t)-1)
@@ -25,8 +26,9 @@ public:
     }
 
     nELF_util::ELF_Rel rela_at(std::size_t idx) const;
+    std::string_view name() const ;
 
-    const Relocatable_file *rel_file;
+    Relocatable_file *rel_file;
     std::size_t shndx;
     std::string_view data;
     std::size_t relsec_idx = -1;
@@ -51,4 +53,12 @@ inline nELF_util::ELF_Rel Input_section::rela_at(std::size_t idx) const
     FATALF("at %lu, wrong sh_type", idx);
 
     return nELF_util::ELF_Rel{};
+}
+
+
+inline std::string_view Input_section::name() const 
+{
+    if (rel_file->section_hdr_table().header_count()  <= shndx)
+        return (shdr().sh_flags & SHF_TLS) ? ".tls_common" : ".common";
+  return rel_file->section_hdr_table().string_table().data() + rel_file->section_hdr_table().headers()[shndx].sh_name;
 }
