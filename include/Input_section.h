@@ -6,23 +6,31 @@
 struct Input_section
 {
 public:
-    Input_section() = default;
-
     Input_section(Relocatable_file &rel_file, std::size_t shndx) 
                 : rel_file(&rel_file), 
                   shndx(shndx), 
-                  data(rel_file.section(shndx), rel_file.section_hdr(shndx).sh_size){}
+                  data(rel_file.section(shndx),
+                  rel_file.section_hdr(shndx).sh_size),
+                  m_relsec_idx(-1),
+                  m_rel_count(0){}
 
 
     auto const& shdr() const {return rel_file->section_hdr(shndx);}
 
-    // if this section has no relocation section, return 0
+    void Set_relsec_idx(std::size_t idx)
+    {
+        m_relsec_idx = idx;
+
+        if (m_relsec_idx == (std::size_t)-1)
+            m_rel_count = 0;
+        else
+            m_rel_count = rel_file->section_hdr(m_relsec_idx).sh_size / rel_file->section_hdr(m_relsec_idx).sh_entsize;
+    }
+    
+
     std::size_t rel_count() const 
     {
-        if (relsec_idx == (std::size_t)-1)
-            return 0;
-        else
-            return rel_file->section_hdr(relsec_idx).sh_size / rel_file->section_hdr(relsec_idx).sh_entsize;
+        return m_rel_count;
     }
 
     nELF_util::ELF_Rel rela_at(std::size_t idx) const;
@@ -31,20 +39,24 @@ public:
     Relocatable_file *rel_file;
     std::size_t shndx;
     std::string_view data;
-    std::size_t relsec_idx = -1;
+    
+
+private:
+    std::size_t m_relsec_idx;
+    std::size_t m_rel_count;
 };
 
 
 inline nELF_util::ELF_Rel Input_section::rela_at(std::size_t idx) const
 {
-    char *rel_section = rel_file->section(relsec_idx);
+    char *rel_section = rel_file->section(m_relsec_idx);
 
-    if (rel_file->section_hdr(relsec_idx).sh_type == SHT_REL)
+    if (rel_file->section_hdr(m_relsec_idx).sh_type == SHT_REL)
     {
         auto *rel = &reinterpret_cast<Elf64_Rel*>(rel_section)[idx];
         return nELF_util::ELF_Rel{*rel};
     }
-    else if (rel_file->section_hdr(relsec_idx).sh_type == SHT_RELA)
+    else if (rel_file->section_hdr(m_relsec_idx).sh_type == SHT_RELA)
     {
         auto *rel = &reinterpret_cast<Elf64_Rela*>(rel_section)[idx];
         return nELF_util::ELF_Rel{*rel};

@@ -12,6 +12,8 @@
 
 static void Init_local_symbols(std::unique_ptr<Symbol[]> &dst, const Relocatable_file &rel_file, std::size_t n_local_sym);
 
+static Input_section& Get_input_section(std::vector<Input_section> &input_section_list, std::size_t shndx);
+
 static std::unique_ptr<Mergeable_section> Split_section(const Relocatable_file &file, Linking_context &ctx, const Input_section &input_sec);
 
 [[nodiscard]] static Merged_section* 
@@ -70,10 +72,23 @@ static void Sort_relocation(Input_file &input_file)
     }
 }
 
+static Input_section& Get_input_section(std::vector<Input_section> &input_section_list, std::size_t shndx)
+{
+    auto cmp = [](const Input_section &cur, size_t shndx)
+    {
+        return cur.shndx < shndx;
+    };
+    
+    auto it = std::lower_bound(input_section_list.begin(), input_section_list.end(), shndx, cmp);
+    assert(it != input_section_list.end());
+    assert(it->shndx == shndx);
+    return *it;
+}
+
 Input_file::Input_file(Relocatable_file &src) : m_src(&src)
 {    
     m_section_relocate_state_list.resize(m_src->section_hdr_table().header_count());
-    m_input_section_list.resize(m_src->section_hdr_table().header_count());
+    m_input_section_list.reserve(m_src->section_hdr_table().header_count());
 
     for(std::size_t i = 0 ; i < m_src->section_hdr_table().header_count() ; i++)
     {
@@ -103,7 +118,7 @@ Input_file::Input_file(Relocatable_file &src) : m_src(&src)
                 else
                 {
                     m_section_relocate_state_list[i] = eRelocate_state::relocatable;
-                    m_input_section_list[i] = Input_section(this->src(), i);
+                    m_input_section_list.push_back(Input_section(this->src(), i));
                     if (shdr.sh_info & SHF_COMPRESSED)
                         FATALF("%scompressed section is supported", "");
                 }
@@ -132,8 +147,9 @@ Input_file::Input_file(Relocatable_file &src) : m_src(&src)
         
         if (m_section_relocate_state_list[shdr.sh_info] != eRelocate_state::relocatable)
             FATALF("m_section_relocate_state_list[%d]: %d is not relocatable??", shdr.sh_info, m_section_relocate_state_list[shdr.sh_info]);
-
-        m_input_section_list[shdr.sh_info].relsec_idx = i;
+        
+        Get_input_section(m_input_section_list, shdr.sh_info).Set_relsec_idx(i);
+        //m_input_section_list[shdr.sh_info].Set_relsec_idx(i);
     }
 
     Sort_relocation(*this);
@@ -270,16 +286,18 @@ void Input_file::Init_mergeable_section(Linking_context &ctx)
 {
     m_mergeable_section_list.resize(m_src->section_hdr_table().header_count());
 
-    for(std::size_t i = 0 ; i < m_src->section_hdr_table().header_count() ; i++)
+    for(Input_section &isec : m_input_section_list)
     {
-        auto &shdr = m_src->section_hdr(i);
+        auto shndx = isec.shndx;
 
-        if ((shdr.sh_flags & SHF_MERGE) == 0 || shdr.sh_size == 0 || m_section_relocate_state_list[i] == eRelocate_state::no_need)
+        auto &shdr = m_src->section_hdr(shndx);
+
+        if ((shdr.sh_flags & SHF_MERGE) == 0 || shdr.sh_size == 0 || m_section_relocate_state_list[shndx] == eRelocate_state::no_need)
             continue;
 
-        m_section_relocate_state_list[i] = eRelocate_state::mergeable;
+        m_section_relocate_state_list[shndx] = eRelocate_state::mergeable;
 
-        m_mergeable_section_list[i] = Split_section(*m_src, ctx, m_input_section_list[i]);
+        m_mergeable_section_list[shndx] = Split_section(*m_src, ctx, isec);
     }
 }
 
@@ -328,17 +346,19 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
 
     // calculate the number of mergeable section symbol
     uint64_t nfrag_syms = 0;
-    for(std::size_t i = 0 ; i < m_input_section_list.size() ; i++)
+    for(Input_section &isec : m_input_section_list)
     {
-        if (m_section_relocate_state_list[i] == eRelocate_state::no_need)
+        auto shndx = isec.shndx;
+
+        if (m_section_relocate_state_list[shndx] == eRelocate_state::no_need)
             continue;
         
-        if (!(m_input_section_list[i].shdr().sh_flags & SHF_ALLOC))
+        if (!(isec.shdr().sh_flags & SHF_ALLOC))
             continue;
         
-        for(std::size_t rel_idx = 0 ; rel_idx < m_input_section_list[i].rel_count() ; rel_idx++)
+        for(std::size_t rel_idx = 0 ; rel_idx < isec.rel_count() ; rel_idx++)
         {
-            auto rel = m_input_section_list[i].rela_at(rel_idx);
+            auto rel = isec.rela_at(rel_idx);
             auto &esym = src().symbol_table()->data(rel.sym());
 
             if (ELF64_ST_TYPE(esym.st_info) == STT_SECTION 
@@ -353,17 +373,19 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
     // a new dummy non-section symbol and redirect the relocation to the
     // newly-created symbol.
     uint64_t idx = 0;
-    for(std::size_t i = 0 ; i < m_input_section_list.size() ; i++)
+    for(Input_section &isec : m_input_section_list)
     {
-        if (m_section_relocate_state_list[i] == eRelocate_state::no_need)
+        auto shndx = isec.shndx;
+
+        if (m_section_relocate_state_list[shndx] == eRelocate_state::no_need)
             continue;
         
-        if (!(m_input_section_list[i].shdr().sh_flags & SHF_ALLOC))
+        if (!(isec.shdr().sh_flags & SHF_ALLOC))
             continue;
         
-        for(std::size_t rel_idx = 0 ; rel_idx < m_input_section_list[i].rel_count() ; rel_idx++)
+        for(std::size_t rel_idx = 0 ; rel_idx < isec.rel_count() ; rel_idx++)
         {
-            auto rel = m_input_section_list[i].rela_at(rel_idx);
+            auto rel = isec.rela_at(rel_idx);
             auto &esym = src().symbol_table()->data(rel.sym());
 
             if (   ELF64_ST_TYPE(esym.st_info) != STT_SECTION 

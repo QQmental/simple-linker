@@ -10,14 +10,15 @@ struct Symbol
 public:
 
     Symbol(const Relocatable_file &rel_file, std::size_t sym_idx) 
-          : m_rel_file(&rel_file), 
+          : m_rel_file(&rel_file),
+            mergeable_section_piece(nullptr),
             sym_idx(sym_idx),
             name(nELF_util::Get_symbol_name(*m_rel_file, sym_idx))
     {
         
     }
 
-    Symbol() = default;
+    Symbol() : m_rel_file(nullptr), mergeable_section_piece(nullptr){};
     ~Symbol() = default;
     
     const elf64_sym& elf_sym() const {return file()->symbol_table()->data(sym_idx);}
