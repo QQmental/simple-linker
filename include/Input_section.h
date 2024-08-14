@@ -26,7 +26,6 @@ public:
         else
             m_rel_count = rel_file->section_hdr(m_relsec_idx).sh_size / rel_file->section_hdr(m_relsec_idx).sh_entsize;
     }
-    
 
     std::size_t rel_count() const 
     {
@@ -40,7 +39,6 @@ public:
     std::size_t shndx;
     std::string_view data;
     
-
 private:
     std::size_t m_relsec_idx;
     std::size_t m_rel_count;

@@ -78,7 +78,7 @@ static Input_section& Get_input_section(std::vector<Input_section> &input_sectio
     {
         return cur.shndx < shndx;
     };
-    
+
     auto it = std::lower_bound(input_section_list.begin(), input_section_list.end(), shndx, cmp);
     assert(it != input_section_list.end());
     assert(it->shndx == shndx);
@@ -149,7 +149,6 @@ Input_file::Input_file(Relocatable_file &src) : m_src(&src)
             FATALF("m_section_relocate_state_list[%d]: %d is not relocatable??", shdr.sh_info, m_section_relocate_state_list[shdr.sh_info]);
         
         Get_input_section(m_input_section_list, shdr.sh_info).Set_relsec_idx(i);
-        //m_input_section_list[shdr.sh_info].Set_relsec_idx(i);
     }
 
     Sort_relocation(*this);

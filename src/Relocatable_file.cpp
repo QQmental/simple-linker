@@ -45,7 +45,7 @@ Relocatable_file::Relocatable_file(std::unique_ptr<char[]> data, std::string nam
 
     if (m_linking_mdata.symtab_idx != (std::size_t)-1)
     {
-        m_symbol_table = std::unique_ptr<nRSIC_V_linking_data::Symbol_table>(new nRSIC_V_linking_data::Symbol_table(
+        m_symbol_table = std::unique_ptr<nLinking_data::Symbol_table>(new nLinking_data::Symbol_table(
                                                                              m_data.get(), 
                                                                              m_section_hdr_table.headers()[m_linking_mdata.symtab_idx], 
                                                                              m_section_hdr_table));

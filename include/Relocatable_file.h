@@ -1,6 +1,6 @@
 #pragma once
 #include <string_view>
-#include "RISC_V_linking_data.h"
+#include "Linking_data.h"
 #include "elf/RISC_V_Section_attribute.h"
 
 class Relocatable_file
@@ -35,21 +35,21 @@ public:
 
     const elf64_hdr elf_hdr() const {return *reinterpret_cast<const elf64_hdr*>(m_data.get());}
     
-    const nRSIC_V_linking_data::Section_hdr_table& section_hdr_table() const {return m_section_hdr_table;}
+    const nLinking_data::Section_hdr_table& section_hdr_table() const {return m_section_hdr_table;}
     const elf64_shdr&  section_hdr(std::size_t idx) const {return section_hdr_table().headers()[idx];}
     char* section(std::size_t idx) {return m_data.get() + section_hdr(idx).sh_offset;}
     std::size_t section_size(std::size_t idx) const {return section_hdr(idx).sh_size;}
 
     // return nullptr if this object file has no symbol table
-    const nRSIC_V_linking_data::Symbol_table* symbol_table() const {return m_symbol_table.get();}
+    const nLinking_data::Symbol_table* symbol_table() const {return m_symbol_table.get();}
     const elf64_shdr& symbol_table_hdr() const {return section_hdr(m_linking_mdata.symtab_idx);}
     std::size_t get_shndx(const Elf64_Sym &sym) const;
     const Linking_mdata& linking_mdata () const {return m_linking_mdata;}
     std::string_view name() const {return m_name;}
 
 private:
-    nRSIC_V_linking_data::Section_hdr_table m_section_hdr_table;
-    std::unique_ptr<nRSIC_V_linking_data::Symbol_table> m_symbol_table;
+    nLinking_data::Section_hdr_table m_section_hdr_table;
+    std::unique_ptr<nLinking_data::Symbol_table> m_symbol_table;
     std::unique_ptr<char[]> m_data;
     Linking_mdata m_linking_mdata;
     std::string m_name;

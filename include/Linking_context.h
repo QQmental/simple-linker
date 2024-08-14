@@ -8,12 +8,13 @@
 #include "elf/ELF.h"
 #include "Relocatable_file.h"
 #include "Input_file.h"
-#include "Merged_section.h"
 #include "third_party/Spin_lock.h"
 
+struct Merged_section;
 
 
-struct Mergeable_section;
+
+
 
 class Linking_context
 {
@@ -24,14 +25,29 @@ public:
         elf64lriscv = EM_RISC_V
     };
 
+    // some flags and options for linking
+    struct Link_option_args
+    {
+        // path of a file
+        using path_of_file_t = std::string;
+
+        std::vector<std::string> library_search_path;
+        std::vector<std::string> library_name;
+        std::vector<path_of_file_t> library;
+        std::vector<path_of_file_t> obj_file;
+        std::string output_file = "a.out";
+        eLink_machine_optinon link_machine_optinon = eLink_machine_optinon::unknown;
+        int argc;
+        char **argv;
+    };
+
     struct linking_package
     {
         std::unique_ptr<Symbol> symbol;
         Input_file *input_file;
     };
 
-    Linking_context(eLink_machine_optinon maching_opt)
-                   :m_link_machine_optinon(maching_opt){}
+    Linking_context(Link_option_args link_option_args, eLink_machine_optinon maching_opt);
 
     void insert_object_file(Relocatable_file src, bool is_from_lib)
     {
@@ -68,7 +84,7 @@ public:
         return it.first->second;
     }
 
-    void link();
+    void Link();
 
     // str should be a null-terminated string
     // after inserted, it's returned as a string_view
@@ -81,9 +97,12 @@ public:
 
     eLink_machine_optinon maching_option() const {return m_link_machine_optinon;}
 
+    Link_option_args link_option_args() const {return m_link_option_args;}
+
     const std::unordered_map<std::string_view, linking_package>& global_symbol_map() const {return m_global_symbol_map;}
 
 private:
+    Link_option_args m_link_option_args;
     std::vector<std::unique_ptr<Relocatable_file>> m_rel_file;
     std::vector<bool> m_is_alive;
     std::vector<Input_file> m_input_file;

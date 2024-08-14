@@ -10,7 +10,7 @@
 
 
 
-namespace nRSIC_V_linking_data
+namespace nLinking_data
 {
 
 class String_table;
