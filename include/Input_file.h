@@ -41,6 +41,7 @@ public:
     void Resolve_sesction_pieces(Linking_context &ctx);
 
     const std::vector<eRelocate_state>& section_relocate_needed_list() const {return m_section_relocate_state_list;}
+    const std::vector<Input_section> input_section_list() const {return m_input_section_list;}
     const Symbol* local_sym_list() const {return m_local_sym_list.get();}
     std::size_t n_local_sym() const {return m_n_local_sym;}
     Relocatable_file& src() const {return *m_src;}

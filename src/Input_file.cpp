@@ -319,6 +319,19 @@ void Input_file::Collect_mergeable_section()
             m->piece_hash_list.shrink_to_fit();
         }
     }
+
+    // some mergeable iput_section can be removed because data of it is stroed in Mergeable_section
+    auto f = [this](auto &item)->bool
+    {
+        return this->m_section_relocate_state_list[item.shndx] == eRelocate_state::mergeable;
+    };
+
+    auto remove_start = std::remove_if(m_input_section_list.begin(), m_input_section_list.end(), f);
+    
+    for(auto it = remove_start ; it != m_input_section_list.end() ; it++)
+        m_section_relocate_state_list[it->shndx] = eRelocate_state::no_need;
+
+    m_input_section_list.erase(remove_start, m_input_section_list.end());
 }
 
 void Input_file::Resolve_sesction_pieces(Linking_context &ctx)

@@ -15,10 +15,11 @@ void Merged_section::Aggregate_section_fragment()
 
     auto map_it = m_map.begin();
 
-    for(std::size_t idx = 0 ; idx < m_map.size() ; idx++)
+    for(item_t &item : vec)
     {
-        vec[idx].first = map_it->first;
-        vec[idx].second = map_it->second.get();
+        item.first = map_it->first;
+        item.second = map_it->second.get();
+        map_it++;
     }
 
     auto cmp = [](const item_t &a, const item_t &b)->bool

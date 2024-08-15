@@ -356,6 +356,32 @@ Linking_context::Linking_context(Link_option_args link_option_args, eLink_machin
 }
 
 
+void Check_duplicate_smbols(const Input_file &file)
+{
+    for (std::size_t i = file.n_local_sym(); i < file.src().section_hdr_table().header_count(); i++)
+    {
+        auto &esym = file.src().symbol_table()->data(i);
+        
+        // a global symbol could be a nullptr
+        auto *sym = file.symbol_list[i];
+
+        if (   sym != nullptr
+            && (sym->file() != nullptr))
+            continue;
+        if (nELF_util::Is_sym_undef(esym) || nELF_util::Is_sym_common(esym))
+            continue;
+        
+        if (nELF_util::Is_sym_abs(esym) == false)
+        {
+            std::size_t shndx = file.src().get_shndx(esym);
+            if (file.section_relocate_needed_list()[shndx] == Input_file::eRelocate_state::no_need)
+                continue;
+        }
+        std::cout << "duplicate symbols " << file.name() << " " << sym->file()->name() << "\n";
+        abort();
+    }
+}
+
 void Linking_context::Link()
 {
     for(std::size_t i = 0 ; i < m_rel_file.size() ; i++)
@@ -366,6 +392,7 @@ void Linking_context::Link()
     for(auto &file : m_input_file)
         file.Put_global_symbol(*this);
 
+{
     std::vector<bool> is_not_from_lib = m_is_alive;
     
     for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
@@ -380,6 +407,7 @@ void Linking_context::Link()
         if (is_not_from_lib[i] == false && m_is_alive[i] == true) // is in lib, and referenced by obj files which is not in archive file
             Reference_dependent_file(m_input_file[i], *this, m_is_alive, {m_input_file.data(), m_input_file.data() + m_input_file.size()});
     }
+}
 
     Remove_unused_file(m_input_file, m_is_alive);
     Remove_unused_file(m_rel_file, m_is_alive);

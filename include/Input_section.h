@@ -27,6 +27,11 @@ public:
             m_rel_count = rel_file->section_hdr(m_relsec_idx).sh_size / rel_file->section_hdr(m_relsec_idx).sh_entsize;
     }
 
+    std::size_t relsec_idx() const 
+    {
+        return m_relsec_idx;
+    }
+
     std::size_t rel_count() const 
     {
         return m_rel_count;
