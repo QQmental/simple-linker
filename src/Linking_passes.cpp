@@ -80,9 +80,8 @@ void nLinking_passes::Check_duplicate_smbols(const Input_file &file)
 // input_file_range.first: addr of the first input_file
 // input_file_range.second: addr of the last input_file + 1
 void nLinking_passes::Reference_dependent_file(Input_file &input_file, 
-                                     Linking_context &ctx, 
-                                     std::vector<bool> &alive_list, 
-                                     const std::pair<Input_file*, Input_file*> input_file_range)
+                                               Linking_context &ctx, 
+                                               const std::function<void(Input_file&)> &reference_file)
 {        
     for(std::size_t sym_idx = input_file.src().linking_mdata().first_global ; sym_idx < input_file.src().symbol_table()->count() ; sym_idx++)
     {
@@ -113,9 +112,7 @@ void nLinking_passes::Reference_dependent_file(Input_file &input_file,
         // bind the undef symbol with the defined global symbol which is from the other file
         input_file.symbol_list[sym_idx] = it->second.symbol.get();
         
-        assert(it->second.input_file >= input_file_range.first && it->second.input_file < input_file_range.second);
-        
-        alive_list[it->second.input_file - input_file_range.first] = true;
+        reference_file(input_file);
     }
 }
 void nLinking_passes::Create_output_sections(Linking_context &ctx)

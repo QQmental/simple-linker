@@ -324,17 +324,23 @@ void Linking_context::Link()
 {
     std::vector<bool> is_not_from_lib = m_is_alive;
     
+    std::function reference_file = [this](Input_file &src)->void
+    {
+        assert(&src >= &*this->input_file_list().begin() && &src < &*this->input_file_list().end());
+        this->m_is_alive[&src - &*this->input_file_list().begin()] = true;
+    };
+
     for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
     {
         if (is_not_from_lib[i] == true)
-            nLinking_passes::Reference_dependent_file(m_input_file[i], *this, m_is_alive, {m_input_file.data(), m_input_file.data() + m_input_file.size()});
+            nLinking_passes::Reference_dependent_file(m_input_file[i], *this, reference_file);
     }
 
     //mark object files needed by other in the same archive file, and not other which is not from the archive file
     for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
     {
         if (is_not_from_lib[i] == false && m_is_alive[i] == true) // is in lib, and referenced by obj files which is not in archive file
-            nLinking_passes::Reference_dependent_file(m_input_file[i], *this, m_is_alive, {m_input_file.data(), m_input_file.data() + m_input_file.size()});
+            nLinking_passes::Reference_dependent_file(m_input_file[i], *this, reference_file);
     }
 }
 
