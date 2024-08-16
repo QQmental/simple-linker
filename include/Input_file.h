@@ -31,6 +31,8 @@ public:
         m_n_local_sym = src.m_n_local_sym;
         m_mergeable_section_list = std::move(src.m_mergeable_section_list);
         m_src = src.m_src;
+        has_init_array = src.has_init_array;
+        has_ctors = src.has_ctors;
         return *this;
     }
     ~Input_file();
@@ -49,6 +51,7 @@ public:
 
     std::vector<Symbol*> symbol_list;
     std::vector<Symbol> mergeable_section_symbol_list;
+    
 private:
     std::vector<eRelocate_state> m_section_relocate_state_list;
     std::vector<Input_section> m_input_section_list;
@@ -56,4 +59,8 @@ private:
     std::size_t m_n_local_sym;
     std::vector<std::unique_ptr<Mergeable_section>> m_mergeable_section_list;
     Relocatable_file *m_src;
+
+public:
+    bool has_init_array = false;
+    bool has_ctors = false;
 };

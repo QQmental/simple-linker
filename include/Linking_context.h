@@ -80,7 +80,7 @@ public:
         m_lock.lock();
         auto it = m_global_symbol_map.insert(std::make_pair(sym_name, std::move(lpkg)));
         m_lock.unlock();
-
+        
         return it.first->second;
     }
 
@@ -100,6 +100,8 @@ public:
     Link_option_args link_option_args() const {return m_link_option_args;}
 
     const std::unordered_map<std::string_view, linking_package>& global_symbol_map() const {return m_global_symbol_map;}
+
+    const std::vector<Input_file>& input_file_list() const {return m_input_file;}
 
 private:
     Link_option_args m_link_option_args;

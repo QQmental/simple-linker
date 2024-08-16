@@ -117,6 +117,17 @@ Input_file::Input_file(Relocatable_file &src) : m_src(&src)
                 }
                 else
                 {
+                    if (   shdr.sh_type == SHT_INIT_ARRAY
+                        || shdr.sh_type == SHT_FINI_ARRAY
+                        || shdr.sh_type == SHT_PREINIT_ARRAY)
+                        this->has_init_array = true;
+
+                    if (   name == ".ctors"
+                        || name.rfind(".ctors.", 0) == 0
+                        || name == ".dtors" 
+                        || name.rfind(".dtors.", 0) == 0)
+                        this->has_ctors = true;
+
                     m_section_relocate_state_list[i] = eRelocate_state::relocatable;
                     m_input_section_list.push_back(Input_section(this->src(), i));
                     if (shdr.sh_info & SHF_COMPRESSED)

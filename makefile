@@ -41,6 +41,7 @@ Build = build
 SRCS = main.cpp \
        Relocatable_file.cpp \
        Linking_context.cpp \
+	   Linking_passes.cpp \
        Input_file.cpp \
 	   Mergeable_section.cpp \
 	   Merged_section.cpp
@@ -63,6 +64,9 @@ $(Build)/Relocatable_file.o: src/Relocatable_file.cpp
 
 $(Build)/Linking_context.o: src/Linking_context.cpp
 	$(CC) $< $(CPP_FLAG) $(INCLUDE) -c -o $@
+
+$(Build)/Linking_passes.o: src/Linking_passes.cpp
+	$(CC) $< $(CPP_FLAG) $(INCLUDE) -c -o $@	
 
 $(Build)/Input_file.o: src/Input_file.cpp
 	$(CC) $< $(CPP_FLAG) $(INCLUDE) -c -o $@

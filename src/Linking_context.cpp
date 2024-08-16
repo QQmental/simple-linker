@@ -7,6 +7,7 @@
 #include "Relocatable_file.h"
 #include "util.h"
 #include "Archive_file.h"
+#include "Linking_passes.h"
 
 using Link_option_args = Linking_context::Link_option_args;
 
@@ -34,11 +35,6 @@ static std::string_view Read_archive_scetion_name(const Archive_file_header &ar_
 static void Load_archived_file_section(Linking_context &linking_ctx, const std::vector<Link_option_args::path_of_file_t> &lib_path) ;
 
 static void Collect_rel_file_content(Linking_context &linking_ctx, const Link_option_args &link_option_args);
-
-static void Reference_dependent_file(Input_file &input_file, 
-                                     Linking_context &ctx, 
-                                     std::vector<bool> &alive_list, 
-                                     const std::pair<Input_file*, Input_file*> input_file_range);
 
 
 //the first few bytes are read from the file and compared with ARCHIVE_FILE_MAGIC, 
@@ -285,49 +281,7 @@ static void Parse_args(Link_option_args *dst, int argc, char* argv[])
 }
 
 
-// Bind undef global symbols in symbol list of each input file to defined global symbols.
-// If a file is not referenced by other files through global symbols, then
-// content of this file is no need to be linked into the output file.
-// a file with no reference will be discarded from the file list
-// input_file_range.first: addr of the first input_file
-// input_file_range.second: addr of the last input_file + 1
-static void Reference_dependent_file(Input_file &input_file, 
-                                     Linking_context &ctx, 
-                                     std::vector<bool> &alive_list, 
-                                     const std::pair<Input_file*, Input_file*> input_file_range)
-{        
-    for(std::size_t sym_idx = input_file.src().linking_mdata().first_global ; sym_idx < input_file.src().symbol_table()->count() ; sym_idx++)
-    {
-        if (input_file.symbol_list[sym_idx] != nullptr) //not nullptr, no need to be binded to the global symbal 
-            continue;
 
-        auto &esym = input_file.src().symbol_table()->data(sym_idx);
-
-        // a file would be referenced when it has a defined symbol 
-        // which is not defined in 'the other' file
-
-        // it's defined, don't mark alive its source, because it's itself
-        if (   !nELF_util::Is_sym_undef(esym) 
-            && (nELF_util::Is_sym_common(esym) && !nELF_util::Is_sym_common(input_file.symbol_list[sym_idx]->elf_sym())))
-            continue;
-        
-        auto it = ctx.Find_symbol(nELF_util::Get_symbol_name(input_file.src(), sym_idx));
-        
-        if (it == ctx.global_symbol_map().end())
-        {
-/*             std::cout << nELF_util::Get_symbol_name(input_file.src(), sym_idx) << \
-            " " << esym.st_size << " " << ELF64_ST_TYPE(esym.st_info) << " not found \n"; */
-            continue;
-        }
-
-        // bind the undef symbol with the defined global symbol which is from the other file
-        input_file.symbol_list[sym_idx] = it->second.symbol.get();
-        
-        assert(it->second.input_file >= input_file_range.first && it->second.input_file < input_file_range.second);
-        
-        alive_list[it->second.input_file - input_file_range.first] = true;
-    }
-}
 
 template <typename File_list_t>
 void Remove_unused_file(File_list_t &dst, const std::vector<bool> &is_alive)
@@ -356,31 +310,6 @@ Linking_context::Linking_context(Link_option_args link_option_args, eLink_machin
 }
 
 
-void Check_duplicate_smbols(const Input_file &file)
-{
-    for (std::size_t i = file.n_local_sym(); i < file.src().section_hdr_table().header_count(); i++)
-    {
-        auto &esym = file.src().symbol_table()->data(i);
-        
-        // a global symbol could be a nullptr
-        auto *sym = file.symbol_list[i];
-
-        if (   sym != nullptr
-            && (sym->file() != nullptr))
-            continue;
-        if (nELF_util::Is_sym_undef(esym) || nELF_util::Is_sym_common(esym))
-            continue;
-        
-        if (nELF_util::Is_sym_abs(esym) == false)
-        {
-            std::size_t shndx = file.src().get_shndx(esym);
-            if (file.section_relocate_needed_list()[shndx] == Input_file::eRelocate_state::no_need)
-                continue;
-        }
-        std::cout << "duplicate symbols " << file.name() << " " << sym->file()->name() << "\n";
-        abort();
-    }
-}
 
 void Linking_context::Link()
 {
@@ -398,14 +327,14 @@ void Linking_context::Link()
     for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
     {
         if (is_not_from_lib[i] == true)
-            Reference_dependent_file(m_input_file[i], *this, m_is_alive, {m_input_file.data(), m_input_file.data() + m_input_file.size()});
+            nLinking_passes::Reference_dependent_file(m_input_file[i], *this, m_is_alive, {m_input_file.data(), m_input_file.data() + m_input_file.size()});
     }
 
     //mark object files needed by other in the same archive file, and not other which is not from the archive file
     for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
     {
         if (is_not_from_lib[i] == false && m_is_alive[i] == true) // is in lib, and referenced by obj files which is not in archive file
-            Reference_dependent_file(m_input_file[i], *this, m_is_alive, {m_input_file.data(), m_input_file.data() + m_input_file.size()});
+            nLinking_passes::Reference_dependent_file(m_input_file[i], *this, m_is_alive, {m_input_file.data(), m_input_file.data() + m_input_file.size()});
     }
 }
 
@@ -424,5 +353,8 @@ void Linking_context::Link()
 
     for(auto &item : merged_section_map)
         item.second->Aggregate_section_fragment();
+
+    for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
+        nLinking_passes::Check_duplicate_smbols(m_input_file[i]); 
 }
 

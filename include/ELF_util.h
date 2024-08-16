@@ -99,13 +99,16 @@ inline bool Is_sym_undef(const elf64_sym &elf_sym)
     return elf_sym.st_shndx == SHN_UNDEF;
 }
 
+inline bool Is_sym_weak(const elf64_sym &elf_sym)
+{
+    return ELF64_ST_BIND(elf_sym.st_info) == STB_WEAK;
+}
 
 //copy from https://github.com/rui314/mold
 template <typename E>
 std::string_view
 get_output_name(std::string_view name, uint64_t flags)
 {
-  
     if (flags & SHF_MERGE)
         return name;
 
@@ -121,7 +124,7 @@ get_output_name(std::string_view name, uint64_t flags)
         std::string_view stem = prefix.substr(0, prefix.size() - 1);
 
         // name is equal to 'stem' or has a prefix 'stem'
-        if (name.rfind(stem, 0) == 0)
+        if (name == stem || name.rfind(prefix, 0) == 0)
             return stem;
     }
 

@@ -4,9 +4,9 @@
 #include <memory>
 
 #include "elf/ELF.h"
+#include "Output_section.h"
 
-
-struct Merged_section
+struct Merged_section : public Output_section
 {
     Merged_section(std::string_view name, int64_t flags, int64_t type, int64_t entsize) 
     {
@@ -34,10 +34,7 @@ struct Merged_section
         uint32_t p2align = 0;
         bool is_alive = false;
     };
-
-    Elf64_Shdr shdr;
-    std::string_view name;
-
+    
 private:
     std::unordered_map<std::string_view, std::unique_ptr<Section_fragment>> m_map;
 };
