@@ -9,6 +9,10 @@
 #include "Relocatable_file.h"
 #include "Input_file.h"
 #include "third_party/Spin_lock.h"
+#include "Output_section.h"
+#include "Output_phdr.h"
+#include "Output_ehdr.h"
+#include "Output_shdr.h"
 
 struct Merged_section;
 
@@ -47,13 +51,24 @@ public:
         Input_file *input_file;
     };
 
-    Linking_context(Link_option_args link_option_args, eLink_machine_optinon maching_opt);
+    Linking_context(Link_option_args link_option_args);
+
+    struct
+    {
+        Symbol *entry = nullptr;
+        Symbol *fiini = nullptr;
+        Symbol *init = nullptr;
+        
+        std::string_view entry_name = "_start";
+        std::string_view fiini_name = "_fini";
+        std::string_view init_name = "_init";
+    }special_symbols;
 
     void insert_object_file(Relocatable_file src, bool is_from_lib)
     {
         elf64_hdr hdr = src.elf_hdr();
         
-        if (hdr.e_machine != (Elf64_Half)m_link_machine_optinon)
+        if (hdr.e_machine != (Elf64_Half)maching_option())
             FATALF("%sincompatible maching type for the given relocatable file: ", "");
 
         m_rel_file.push_back(std::make_unique<Relocatable_file>(std::move(src)));
@@ -95,22 +110,13 @@ public:
         return ret;
     }
 
-    eLink_machine_optinon maching_option() const {return m_link_machine_optinon;}
+    eLink_machine_optinon maching_option() const {return m_link_option_args.link_machine_optinon;}
 
     Link_option_args link_option_args() const {return m_link_option_args;}
 
     const std::unordered_map<std::string_view, linking_package>& global_symbol_map() const {return m_global_symbol_map;}
 
     const std::vector<Input_file>& input_file_list() const {return m_input_file;}
-
-private:
-    Link_option_args m_link_option_args;
-    std::vector<std::unique_ptr<Relocatable_file>> m_rel_file;
-    std::vector<bool> m_is_alive;
-    std::vector<Input_file> m_input_file;
-    std::unordered_map<std::string_view, linking_package> m_global_symbol_map;
-    eLink_machine_optinon m_link_machine_optinon;
-    std::vector<std::unique_ptr<char[]>> m_string_pool;
 
 public: 
     struct Output_merged_section_id
@@ -137,8 +143,16 @@ public:
 
 
     std::unordered_map<Output_merged_section_id, std::unique_ptr<Merged_section>, Output_merged_section_id::Hash_func> merged_section_map;
+    std::vector<std::unique_ptr<Output_section>> osec_pool;
+    std::vector<Chunk*> chunk_list;
 
 private:
+    Link_option_args m_link_option_args;
+    std::vector<std::unique_ptr<Relocatable_file>> m_rel_file;
+    std::vector<bool> m_is_alive;
+    std::vector<Input_file> m_input_file;
+    std::unordered_map<std::string_view, linking_package> m_global_symbol_map;
+    std::vector<std::unique_ptr<char[]>> m_string_pool;
     Spin_lock m_lock;
 };
 

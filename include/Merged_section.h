@@ -4,13 +4,12 @@
 #include <memory>
 
 #include "elf/ELF.h"
-#include "Output_section.h"
+#include "Chunk.h"
 
-struct Merged_section : public Output_section
+struct Merged_section : public Chunk
 {
-    Merged_section(std::string_view name, int64_t flags, int64_t type, int64_t entsize) 
+    Merged_section(std::string_view name, int64_t flags, int64_t type, int64_t entsize) : Chunk(name)
     {
-        this->name = name;
         this->shdr.sh_flags = flags;
         this->shdr.sh_type = type;
         this->shdr.sh_entsize = entsize;
@@ -20,7 +19,7 @@ struct Merged_section : public Output_section
     
     Section_fragment* Insert(std::string_view key, uint64_t hash, uint32_t p2align);
 
-    void Aggregate_section_fragment();
+    void Assign_offset();
 
     struct Section_fragment
     {

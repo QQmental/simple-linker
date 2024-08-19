@@ -12,11 +12,12 @@ int main(int argc, char* argv[])
     printf("\n\n");
     Linking_context::Link_option_args link_option_args ;
 
+    link_option_args.link_machine_optinon = Linking_context::eLink_machine_optinon::elf64lriscv;
     link_option_args.argc = argc-1;
     link_option_args.argv = argv+1;
 
 
-    Linking_context linking_ctx(link_option_args, Linking_context::eLink_machine_optinon::elf64lriscv);
+    Linking_context linking_ctx(link_option_args);
 
     Show_link_option_args(linking_ctx.link_option_args());
     

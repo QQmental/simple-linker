@@ -298,9 +298,7 @@ void Remove_unused_file(File_list_t &dst, const std::vector<bool> &is_alive)
     dst.erase(remove_start, dst.end());
 }
 
-Linking_context::Linking_context(Link_option_args link_option_args, eLink_machine_optinon maching_opt)
-                               : m_link_option_args(std::move(link_option_args)), 
-                                 m_link_machine_optinon(maching_opt)
+Linking_context::Linking_context(Link_option_args link_option_args):m_link_option_args(std::move(link_option_args))
 {
     Parse_args(&m_link_option_args, m_link_option_args.argc, m_link_option_args.argv);
 
@@ -324,7 +322,7 @@ void Linking_context::Link()
 {
     std::vector<bool> is_not_from_lib = m_is_alive;
     
-    std::function reference_file = [this](Input_file &src)->void
+    std::function reference_file = [this](const Input_file &src)->void
     {
         assert(&src >= &*this->input_file_list().begin() && &src < &*this->input_file_list().end());
         this->m_is_alive[&src - &*this->input_file_list().begin()] = true;
@@ -352,15 +350,23 @@ void Linking_context::Link()
         m_input_file[i].Init_mergeable_section(*this);
 
     for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
-        m_input_file[i].Collect_mergeable_section();
+        m_input_file[i].Collect_mergeable_section_piece();
 
     for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
         m_input_file[i].Resolve_sesction_pieces(*this);
 
+    nLinking_passes::Bind_special_symbols(*this);
+    
     for(auto &item : merged_section_map)
-        item.second->Aggregate_section_fragment();
+        item.second->Assign_offset();
 
     for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
-        nLinking_passes::Check_duplicate_smbols(m_input_file[i]); 
+        nLinking_passes::Check_duplicate_smbols(m_input_file[i]);
+
+    nLinking_passes::Combined_input_sections(*this);
+
+    nLinking_passes::Assign_input_section_offset(*this);
+
+
 }
 

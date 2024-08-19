@@ -26,7 +26,7 @@ public:
     {
         symbol_list = std::move(src.symbol_list);
         m_section_relocate_state_list = std::move(src.m_section_relocate_state_list);
-        m_input_section_list = std::move(src.m_input_section_list);
+        input_section_list = std::move(src.input_section_list);
         m_local_sym_list = std::move(src.m_local_sym_list);
         m_n_local_sym = src.m_n_local_sym;
         m_mergeable_section_list = std::move(src.m_mergeable_section_list);
@@ -39,11 +39,14 @@ public:
 
     void Put_global_symbol(Linking_context &ctx);
     void Init_mergeable_section(Linking_context &ctx);
-    void Collect_mergeable_section();
+    // there are some entries in mergeable section
+    // they are reffered as 'mergeable section piece' or 'fragment' in this project
+    // pieces are merged if they have same property
+    void Collect_mergeable_section_piece();
     void Resolve_sesction_pieces(Linking_context &ctx);
 
     const std::vector<eRelocate_state>& section_relocate_needed_list() const {return m_section_relocate_state_list;}
-    const std::vector<Input_section> input_section_list() const {return m_input_section_list;}
+    Input_section* Get_input_section(std::size_t shndx);
     const Symbol* local_sym_list() const {return m_local_sym_list.get();}
     std::size_t n_local_sym() const {return m_n_local_sym;}
     Relocatable_file& src() const {return *m_src;}
@@ -51,16 +54,15 @@ public:
 
     std::vector<Symbol*> symbol_list;
     std::vector<Symbol> mergeable_section_symbol_list;
-    
+    std::vector<Input_section> input_section_list;
+    bool has_init_array = false;
+    bool has_ctors = false;
+
 private:
     std::vector<eRelocate_state> m_section_relocate_state_list;
-    std::vector<Input_section> m_input_section_list;
     std::unique_ptr<Symbol[]> m_local_sym_list;
     std::size_t m_n_local_sym;
     std::vector<std::unique_ptr<Mergeable_section>> m_mergeable_section_list;
     Relocatable_file *m_src;
 
-public:
-    bool has_init_array = false;
-    bool has_ctors = false;
 };

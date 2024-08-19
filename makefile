@@ -32,7 +32,7 @@ link_test_args = -plugin \
 
 CC = g++
 
-CPP_FLAG = -std=c++17 -pedantic -Wall -MMD -g -O0 -Wpedantic
+CPP_FLAG = -std=c++17 -pedantic -Wall -MMD -O0 -g -Wpedantic
 
 INCLUDE = $(addprefix -I,include ./)
 

@@ -7,7 +7,7 @@
 
 
 
-void Merged_section::Aggregate_section_fragment()
+void Merged_section::Assign_offset()
 {
     using item_t = std::pair<std::string_view, Section_fragment*>;
 
