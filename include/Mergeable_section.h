@@ -5,11 +5,13 @@
 #include <algorithm>
 #include <stdint.h>
 
-#include "Merged_section.h"
+#include "Chunk/Merged_section.h"
 
 // a mergeable section can be sliced into pieces, and they will be aggregated 
 struct Mergeable_section
 {
+	std::size_t size() const {return piece_offset_list.size();}
+
 	std::string_view data;
 	std::vector<uint32_t> piece_offset_list;
 	std::vector<uint64_t> piece_hash_list; // is it really needed?

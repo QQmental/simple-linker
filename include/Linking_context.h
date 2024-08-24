@@ -4,15 +4,23 @@
 #include <string_view>
 #include <unordered_map>
 #include <atomic>
+#include <type_traits>
 
 #include "elf/ELF.h"
 #include "Relocatable_file.h"
 #include "Input_file.h"
 #include "third_party/Spin_lock.h"
-#include "Output_section.h"
-#include "Output_phdr.h"
-#include "Output_ehdr.h"
-#include "Output_shdr.h"
+#include "Chunk/Output_section.h"
+#include "Chunk/Output_phdr.h"
+#include "Chunk/Output_ehdr.h"
+#include "Chunk/Output_shdr.h"
+#include "Chunk/Symtab_shndx_section.h"
+#include "Chunk/Shstrtab_section.h"
+#include "Chunk/Strtab_section.h"
+#include "Chunk/Symtab_section.h"
+#include "Chunk/Riscv_attributes_section.h"
+#include "Chunk/Got_section.h"
+
 
 struct Merged_section;
 
@@ -110,6 +118,24 @@ public:
         return ret;
     }
 
+    Output_section* Insert_osec(std::unique_ptr<Output_section> src)
+    {
+        Output_section *ret = src.get();
+        m_osec_pool.push_back(std::move(src));
+        chunk_list.push_back(ret);
+        return ret;
+    }
+
+    template<typename chunk_t>
+    chunk_t* Insert_chunk(std::unique_ptr<chunk_t> src)
+    {
+        static_assert(std::is_base_of<Chunk, chunk_t>::value == true);
+        chunk_t *ret = src.get();
+        m_chunk_pool.push_back(std::move(src));
+        chunk_list.push_back(ret);
+        return ret;
+    }
+
     eLink_machine_optinon maching_option() const {return m_link_option_args.link_machine_optinon;}
 
     Link_option_args link_option_args() const {return m_link_option_args;}
@@ -118,7 +144,8 @@ public:
 
     const std::vector<Input_file>& input_file_list() const {return m_input_file;}
 
-public: 
+    const std::vector<std::unique_ptr<Output_section>>& osec_pool() {return m_osec_pool;}
+
     struct Output_merged_section_id
     {
         Output_merged_section_id() = default;
@@ -141,10 +168,18 @@ public:
         decltype(Elf64_Shdr::sh_entsize) entsize;
     };
 
-
     std::unordered_map<Output_merged_section_id, std::unique_ptr<Merged_section>, Output_merged_section_id::Hash_func> merged_section_map;
-    std::vector<std::unique_ptr<Output_section>> osec_pool;
     std::vector<Chunk*> chunk_list;
+    Output_phdr *phdr = nullptr;
+    Output_ehdr *ehdr = nullptr;
+    Output_shdr *shdr = nullptr;
+    Symtab_shndx_section *symtab_shndx_section = nullptr;
+    Symtab_section *symtab_section = nullptr;
+    Shstrtab_section *shstrtab_section = nullptr;
+    Strtab_section *strtab_section = nullptr;
+    Riscv_attributes_section *riscv_attributes_section = nullptr;
+    Got_section *got = nullptr;
+
 
 private:
     Link_option_args m_link_option_args;
@@ -153,6 +188,8 @@ private:
     std::vector<Input_file> m_input_file;
     std::unordered_map<std::string_view, linking_package> m_global_symbol_map;
     std::vector<std::unique_ptr<char[]>> m_string_pool;
+    std::vector<std::unique_ptr<Output_section>> m_osec_pool;
+    std::vector<std::unique_ptr<Chunk>> m_chunk_pool;
     Spin_lock m_lock;
 };
 

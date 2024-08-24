@@ -4,7 +4,7 @@
 #include <memory>
 
 #include "elf/ELF.h"
-#include "Chunk.h"
+#include "Chunk/Chunk.h"
 
 struct Merged_section : public Chunk
 {

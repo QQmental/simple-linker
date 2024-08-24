@@ -8,7 +8,7 @@
 #include "Linking_context.h"
 #include "Mergeable_section.h"
 #include "ELF_util.h"
-#include "Merged_section.h"
+#include "Chunk/Merged_section.h"
 
 static void Init_local_symbols(std::unique_ptr<Symbol[]> &dst, const Relocatable_file &rel_file, std::size_t n_local_sym);
 
@@ -87,7 +87,7 @@ Input_section* Input_file::Get_input_section(std::size_t shndx)
 
 Input_file::Input_file(Relocatable_file &src) : m_src(&src)
 {    
-    m_section_relocate_state_list.resize(m_src->section_hdr_table().header_count());
+    m_relocate_state_list.resize(m_src->section_hdr_table().header_count());
     input_section_list.reserve(m_src->section_hdr_table().header_count());
 
     for(std::size_t i = 0 ; i < m_src->section_hdr_table().header_count() ; i++)
@@ -104,7 +104,7 @@ Input_file::Input_file(Relocatable_file &src) : m_src(&src)
             case SHT_SYMTAB_SHNDX:
             case SHT_STRTAB:
             case SHT_NULL:
-                m_section_relocate_state_list[i] = eRelocate_state::no_need;
+                m_relocate_state_list[i] = eRelocate_state::no_need;
             break;
             
             default:
@@ -112,7 +112,7 @@ Input_file::Input_file(Relocatable_file &src) : m_src(&src)
 
                 if (name == ".debug_gnu_pubnames" || name == ".debug_gnu_pubtypes") // not supported 
                 {
-                    m_section_relocate_state_list[i] = eRelocate_state::no_need;
+                    m_relocate_state_list[i] = eRelocate_state::no_need;
                     break;
                 }
                 else
@@ -128,7 +128,7 @@ Input_file::Input_file(Relocatable_file &src) : m_src(&src)
                         || name.rfind(".dtors.", 0) == 0)
                         this->has_ctors = true;
 
-                    m_section_relocate_state_list[i] = eRelocate_state::relocatable;
+                    m_relocate_state_list[i] = eRelocate_state::relocatable;
                     input_section_list.push_back(Input_section(this->src(), i));
                     if (shdr.sh_info & SHF_COMPRESSED)
                         FATALF("%scompressed section is supported", "");
@@ -156,8 +156,8 @@ Input_file::Input_file(Relocatable_file &src) : m_src(&src)
         if (shdr.sh_type != SHT_REL && shdr.sh_type != SHT_RELA)
             continue;
         
-        if (m_section_relocate_state_list[shdr.sh_info] != eRelocate_state::relocatable)
-            FATALF("m_section_relocate_state_list[%d]: %d is not relocatable??", shdr.sh_info, m_section_relocate_state_list[shdr.sh_info]);
+        if (m_relocate_state_list[shdr.sh_info] != eRelocate_state::relocatable)
+            FATALF("m_relocate_state_list[%d]: %d is not relocatable??", shdr.sh_info, m_relocate_state_list[shdr.sh_info]);
         
         if (auto *ptr = Get_input_section(shdr.sh_info) ; ptr != nullptr)
             ptr->Set_relsec_idx(i);
@@ -188,7 +188,7 @@ void Input_file::Put_global_symbol(Linking_context &ctx)
             
         if ( !nELF_util::Is_sym_abs(esym) && !nELF_util::Is_sym_common(esym))
         {
-            if (m_section_relocate_state_list[src().get_shndx(esym)] == eRelocate_state::no_need)
+            if (m_relocate_state_list[src().get_shndx(esym)] == eRelocate_state::no_need)
                 continue;
         }
 
@@ -303,10 +303,10 @@ void Input_file::Init_mergeable_section(Linking_context &ctx)
 
         auto &shdr = m_src->section_hdr(shndx);
 
-        if ((shdr.sh_flags & SHF_MERGE) == 0 || shdr.sh_size == 0 || m_section_relocate_state_list[shndx] == eRelocate_state::no_need)
+        if ((shdr.sh_flags & SHF_MERGE) == 0 || shdr.sh_size == 0 || m_relocate_state_list[shndx] == eRelocate_state::no_need)
             continue;
 
-        m_section_relocate_state_list[shndx] = eRelocate_state::mergeable;
+        m_relocate_state_list[shndx] = eRelocate_state::mergeable;
 
         m_mergeable_section_list[shndx] = Split_section(*m_src, ctx, isec);
     }
@@ -332,18 +332,18 @@ void Input_file::Collect_mergeable_section_piece()
         }
     }
 
-    // some mergeable iput_section can be removed because data of it is stroed in Mergeable_section
+/*     // some mergeable iput_section can be removed because data of it is stroed in Mergeable_section
     auto f = [this](auto &item)->bool
     {
-        return this->m_section_relocate_state_list[item.shndx] == eRelocate_state::mergeable;
+        return this->m_relocate_state_list[item.shndx] == eRelocate_state::mergeable;
     };
 
     auto remove_start = std::remove_if(input_section_list.begin(), input_section_list.end(), f);
     
     for(auto it = remove_start ; it != input_section_list.end() ; it++)
-        m_section_relocate_state_list[it->shndx] = eRelocate_state::no_need;
+        m_relocate_state_list[it->shndx] = eRelocate_state::no_need;
 
-    input_section_list.erase(remove_start, input_section_list.end());
+    input_section_list.erase(remove_start, input_section_list.end()); */
 }
 
 void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
@@ -359,13 +359,14 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
 
         auto shndx = src().get_shndx(esym);
 
-        if (   m_section_relocate_state_list[shndx] != eRelocate_state::mergeable
+        if (   m_relocate_state_list[shndx] != eRelocate_state::mergeable
             || m_mergeable_section_list[shndx] == nullptr
             || m_mergeable_section_list[shndx]->piece_offset_list.empty() == true)
             continue;
 
-        std::tie(sym->mergeable_section_piece, sym->val) 
-            = m_mergeable_section_list[shndx]->Get_mergeable_piece(esym.st_value);
+        auto pair = m_mergeable_section_list[shndx]->Get_mergeable_piece(esym.st_value);
+        sym->Set_piece(pair.first);
+        sym->val = pair.second;
     }
 
     // calculate the number of mergeable section symbol
@@ -374,7 +375,7 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
     {
         auto shndx = isec.shndx;
 
-        if (m_section_relocate_state_list[shndx] == eRelocate_state::no_need)
+        if (m_relocate_state_list[shndx] == eRelocate_state::no_need)
             continue;
         
         if (!(isec.shdr().sh_flags & SHF_ALLOC))
@@ -386,12 +387,12 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
             auto &esym = src().symbol_table()->data(rel.sym());
 
             if (ELF64_ST_TYPE(esym.st_info) == STT_SECTION 
-                && m_section_relocate_state_list[m_src->get_shndx(esym)] == eRelocate_state::mergeable)
+                && m_relocate_state_list[m_src->get_shndx(esym)] == eRelocate_state::mergeable)
                 nfrag_syms++;
         }
     }
 
-    mergeable_section_symbol_list.resize(nfrag_syms);
+    m_mergeable_section_symbol_list.resize(nfrag_syms);
 
     // For each relocation referring a mergeable section symbol, we create
     // a new dummy non-section symbol and redirect the relocation to the
@@ -401,7 +402,7 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
     {
         auto shndx = isec.shndx;
 
-        if (m_section_relocate_state_list[shndx] == eRelocate_state::no_need)
+        if (m_relocate_state_list[shndx] == eRelocate_state::no_need)
             continue;
         
         if (!(isec.shdr().sh_flags & SHF_ALLOC))
@@ -426,18 +427,17 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
             if (mergeable_section_piece == nullptr)
                 FATALF("%s", "bad fragment relocated");
 
-            auto &new_sym = mergeable_section_symbol_list[idx];
-            new_sym = Symbol(*m_src, rel.sym());
+            auto &new_sym = m_mergeable_section_symbol_list[idx];
             new_sym.name = "<fragment>";
             new_sym.sym_idx = rel.sym();
-            new_sym.mergeable_section_piece = mergeable_section_piece;
+            new_sym.Set_piece(mergeable_section_piece);
             new_sym.val = piece_offset - rel.r_addend;
             rel.Set_sym(m_src->symbol_table()->count() + idx); // redirect the relocation to the new symbol
             idx++;
         }
     }
-    assert(idx == mergeable_section_symbol_list.size());
+    assert(idx == m_mergeable_section_symbol_list.size());
 
-    for(auto &frag_sym : mergeable_section_symbol_list)
+    for(auto &frag_sym : m_mergeable_section_symbol_list)
         symbol_list.push_back(&frag_sym);
 }

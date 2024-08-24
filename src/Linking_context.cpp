@@ -337,7 +337,7 @@ void Linking_context::Link()
     //mark object files needed by other in the same archive file, and not other which is not from the archive file
     for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
     {
-        if (is_not_from_lib[i] == false && m_is_alive[i] == true) // is in lib, and referenced by obj files which is not in archive file
+        if (is_not_from_lib[i] == false && m_is_alive[i] == true) // is in lib, and referenced by obj files which are not in archive file
             nLinking_passes::Reference_dependent_file(m_input_file[i], *this, reference_file);
     }
 }
@@ -360,6 +360,8 @@ void Linking_context::Link()
     for(auto &item : merged_section_map)
         item.second->Assign_offset();
 
+    nLinking_passes::Create_synthetic_sections(*this);
+
     for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
         nLinking_passes::Check_duplicate_smbols(m_input_file[i]);
 
@@ -367,6 +369,7 @@ void Linking_context::Link()
 
     nLinking_passes::Assign_input_section_offset(*this);
 
+    nLinking_passes::Sort_output_sections(*this);
 
 }
 

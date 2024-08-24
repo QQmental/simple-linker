@@ -2,20 +2,18 @@
 #include <unordered_map>
 #include <numeric>
 #include <atomic>
+#include <algorithm>
 
 #include "Linking_passes.h"
 #include "ELF_util.h"
-#include "Output_section.h"
+#include "Chunk/Output_section.h"
 
 // a lot of code is copied from https://github.com/rui314/mold
 
-
-
-// https://github.com/rui314/mold
 static bool Has_ctors_and_init_array(Linking_context &ctx);
 static uint64_t Canonicalize_type(std::string_view name, uint64_t type);
 static Output_section_key Get_output_section_key(const Input_section &isec, bool ctors_in_init_array);
-
+static uint64_t to_phdr_flags(Linking_context &ctx, const Chunk *chunk);
 
 static bool Has_ctors_and_init_array(Linking_context &ctx)
 {
@@ -73,7 +71,15 @@ static Output_section_key Get_output_section_key(const Input_section &isec, bool
     return Output_section_key{name, type};
 }
 
+static uint64_t to_phdr_flags(Linking_context &ctx, const Chunk *chunk)
+{
+  bool write = (chunk->shdr.sh_flags & SHF_WRITE);
+  bool exec = (chunk->shdr.sh_flags & SHF_EXECINSTR);
 
+  return  (uint64_t)eSegment_flag::PF_R 
+        | (write ? (uint64_t)eSegment_flag::PF_W : (uint64_t)eSegment_flag::PF_NONE)
+        | (exec ? (uint64_t)eSegment_flag::PF_X : (uint64_t)eSegment_flag::PF_NONE);
+}
 
 
 void nLinking_passes::Check_duplicate_smbols(const Input_file &file)
@@ -94,7 +100,7 @@ void nLinking_passes::Check_duplicate_smbols(const Input_file &file)
         if (nELF_util::Is_sym_abs(esym) == false)
         {
             std::size_t shndx = file.src().get_shndx(esym);
-            if (file.section_relocate_needed_list()[shndx] == Input_file::eRelocate_state::no_need)
+            if (file.relocate_state_list()[shndx] == Input_file::eRelocate_state::no_need)
                 continue;
         }
         std::cout << "duplicate symbols " << file.name() << " " << sym->file()->name() << "\n";
@@ -164,7 +170,7 @@ void nLinking_passes::Combined_input_sections(Linking_context &ctx)
     // so there is no life time issue due to Output_section*
     std::unordered_map<Output_section_key, Osec_bind_state, Output_section_key::Hash_func> osec_map;
 
-    std::size_t size = ctx.osec_pool.size();
+    std::size_t size = ctx.osec_pool().size();
 
     bool ctors_in_init_array = Has_ctors_and_init_array(ctx);
 
@@ -179,7 +185,10 @@ void nLinking_passes::Combined_input_sections(Linking_context &ctx)
     counter_t bind_offset = 0;
 
     for(const Input_file &input_file : ctx.input_file_list())
-        isec_cnt += input_file.input_section_list.size();
+    {
+        for(auto state : input_file.relocate_state_list())
+            isec_cnt += state == Input_file::eRelocate_state::relocatable;
+    }
 
     std::vector<IN_OUT_section_bind> in_out_section_bind(isec_cnt);
 
@@ -187,6 +196,9 @@ void nLinking_passes::Combined_input_sections(Linking_context &ctx)
     {
         for(const Input_section &isec : input_file.input_section_list)
         {
+            if (input_file.relocate_state_list()[isec.shndx] != Input_file::eRelocate_state::relocatable)
+                continue;
+
             auto &shdr = isec.shdr();
             
             auto sh_flags = shdr.sh_flags
@@ -208,11 +220,10 @@ void nLinking_passes::Combined_input_sections(Linking_context &ctx)
                 }           
                 else
                 {
-                    auto ptr = std::make_unique<Output_section>(key);
-                    auto it2 = osec_map.insert(std::make_pair(key, Osec_bind_state{ptr.get()}));
+                    auto ptr = new Output_section(key);
+                    auto it2 = osec_map.insert(std::make_pair(key, Osec_bind_state{ptr}));
 
                     targ = &it2.first->second;
-                    ctx.osec_pool.push_back(std::move(ptr));
                 }
                 auto offset = bind_offset++;
                 in_out_section_bind[offset].isec = &isec;
@@ -232,13 +243,12 @@ void nLinking_passes::Combined_input_sections(Linking_context &ctx)
         item.second.osec->shdr.sh_flags = *item.second.sh_flag;
         item.second.osec->member_list.resize(*item.second.member_cnt);
     }
-
-
-    std::vector<Chunk*> chunk_list;
-    chunk_list.reserve(ctx.osec_pool.size() - size + ctx.merged_section_map.size());
     
-    for(std::size_t i = size; i < ctx.osec_pool.size() ; i++)
-        chunk_list.push_back(ctx.osec_pool[i].get());
+
+    ctx.chunk_list.reserve(osec_map.size() - size + ctx.merged_section_map.size());
+    
+    for(auto &obs : osec_map)
+       ctx.Insert_osec(std::unique_ptr<Output_section>(obs.second.osec));
 
     // Add input sections to output sections
     for(auto &io_bind : in_out_section_bind)
@@ -273,7 +283,7 @@ void nLinking_passes::Bind_special_symbols(Linking_context &ctx)
 
 void nLinking_passes::Assign_input_section_offset(Linking_context &ctx)
 {
-    for(auto &osec : ctx.osec_pool)
+    for(auto &osec : ctx.osec_pool())
     {
         osec->input_section_offset_list.resize(osec->member_list.size());
         std::size_t offset = 0, p2align = 0;
@@ -291,4 +301,67 @@ void nLinking_passes::Assign_input_section_offset(Linking_context &ctx)
         osec->shdr.sh_size = offset;
         osec->shdr.sh_addralign = 1 << p2align;
     }
+}
+
+void nLinking_passes::Create_synthetic_sections(Linking_context &ctx)
+{
+    ctx.phdr = ctx.Insert_chunk(std::make_unique<Output_phdr>(SHF_ALLOC));
+    ctx.ehdr = ctx.Insert_chunk(std::make_unique<Output_ehdr>(SHF_ALLOC));
+    ctx.shdr = ctx.Insert_chunk(std::make_unique<Output_shdr>());
+    ctx.symtab_section = ctx.Insert_chunk(std::make_unique<Symtab_section>());
+    ctx.shstrtab_section = ctx.Insert_chunk(std::make_unique<Shstrtab_section>());
+    ctx.strtab_section = ctx.Insert_chunk(std::make_unique<Strtab_section>());
+    ctx.riscv_attributes_section = ctx.Insert_chunk(std::make_unique<Riscv_attributes_section>());
+}
+
+void nLinking_passes::Sort_output_sections(Linking_context &ctx)
+{
+    auto get_rank1 = [&ctx](const Chunk *chunk)->int32_t
+    {
+        auto type = chunk->shdr.sh_type;
+        auto flags = chunk->shdr.sh_flags;
+
+        if (chunk == ctx.ehdr)
+            return 0;
+        if (chunk == ctx.phdr)
+            return 1;
+        if (type == SHT_NOTE && (flags & SHF_ALLOC))
+            return 3;
+        if (chunk == ctx.shdr)
+            return INT32_MAX -1;
+
+        
+        bool alloc = (flags & SHF_ALLOC);
+        bool writable = (flags & SHF_WRITE);
+        bool exec = (flags & SHF_EXECINSTR);
+        bool tls = (flags & SHF_TLS);
+        bool is_bss = (type == SHT_NOBITS);
+
+        return   (1 << 10) | (!alloc << 9) | (writable << 8) 
+               | (exec << 7) | (!tls << 6) | (is_bss << 4);
+    };
+
+    auto get_rank2 = [&ctx](const Chunk *chunk) -> int64_t
+    {
+        auto &shdr = chunk->shdr;
+        if (shdr.sh_type == SHT_NOTE)
+            return -shdr.sh_addralign;
+
+        if (chunk == ctx.got)
+            return 2;
+        if (chunk->name == ".toc")
+            return 3;
+        if (chunk->name == ".alpha_got")
+            return 4;
+        return 0;
+    };
+
+    std::sort(ctx.chunk_list.begin(),
+              ctx.chunk_list.end(), 
+              [&](const Chunk *a, const Chunk *b)
+              {
+                  return  std::tuple{get_rank1(a), get_rank2(a), a->name}
+                        < std::tuple{get_rank1(b), get_rank2(b), b->name};
+              });
+
 }

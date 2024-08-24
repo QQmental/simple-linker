@@ -50,6 +50,15 @@ constexpr uint64_t ET_CORE   = 4;
 constexpr uint64_t ET_LOPROC = 0xff00;
 constexpr uint64_t ET_HIPROC = 0xffff;
 
+enum class eSegment_flag: uint32_t
+{
+  PF_NONE = 0,
+  PF_X = 1,  // executable
+  PF_W = 2,  // writable
+  PF_R = 4,  // readable
+};
+
+
 constexpr uint64_t EI_NIDENT = 16;
 
 typedef struct elf32_sym{
