@@ -86,7 +86,7 @@ public:
     // return an iterator to the target, and the target has a const linking_package
     auto Find_symbol(std::string_view name) const
     {   
-        auto it = std::as_const(m_global_symbol_map).find(name);;
+        auto it = global_symbol_map().find(name);;
     
         return it;
     }

@@ -318,29 +318,9 @@ void Linking_context::Link()
 
     for(auto &file : m_input_file)
         file.Put_global_symbol(*this);
-
-{
-    std::vector<bool> is_not_from_lib = m_is_alive;
     
-    std::function reference_file = [this](const Input_file &src)->void
-    {
-        assert(&src >= &*this->input_file_list().begin() && &src < &*this->input_file_list().end());
-        this->m_is_alive[&src - &*this->input_file_list().begin()] = true;
-    };
 
-    for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
-    {
-        if (is_not_from_lib[i] == true)
-            nLinking_passes::Reference_dependent_file(m_input_file[i], *this, reference_file);
-    }
-
-    //mark object files needed by other in the same archive file, and not other which is not from the archive file
-    for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
-    {
-        if (is_not_from_lib[i] == false && m_is_alive[i] == true) // is in lib, and referenced by obj files which are not in archive file
-            nLinking_passes::Reference_dependent_file(m_input_file[i], *this, reference_file);
-    }
-}
+    nLinking_passes::Resolve_symbols(*this, m_input_file, m_is_alive);
 
     Remove_unused_file(m_input_file, m_is_alive);
     Remove_unused_file(m_rel_file, m_is_alive);

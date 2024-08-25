@@ -6,6 +6,8 @@ namespace nLinking_passes
 {
     using Link_option_args = Linking_context::Link_option_args;
 
+    void Resolve_symbols(Linking_context &ctx, std::vector<Input_file> &input_file_list, std::vector<bool> &is_alive);
+
     void Reference_dependent_file(Input_file &input_file, 
                                   Linking_context &ctx,
                                   const std::function<void(const Input_file&)> &reference_file);

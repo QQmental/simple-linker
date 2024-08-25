@@ -3,6 +3,7 @@
 #include <numeric>
 #include <atomic>
 #include <algorithm>
+#include <queue>
 
 #include "Linking_passes.h"
 #include "ELF_util.h"
@@ -363,5 +364,37 @@ void nLinking_passes::Sort_output_sections(Linking_context &ctx)
                   return  std::tuple{get_rank1(a), get_rank2(a), a->name}
                         < std::tuple{get_rank1(b), get_rank2(b), b->name};
               });
+
+}
+
+void nLinking_passes::Resolve_symbols(Linking_context &ctx, std::vector<Input_file> &input_file_list, std::vector<bool> &is_alive)
+{    
+    std::queue<std::size_t> file_idx_queue;
+
+    std::function reference_file = [&ctx, &input_file_list, &is_alive, &file_idx_queue](const Input_file &src)->void
+    {
+        assert(&src >= &*input_file_list.begin() && &src < &*input_file_list.end());
+        
+        auto idx = &src - &*input_file_list.begin();
+        if (is_alive[idx] == false)
+        {
+            file_idx_queue.push(idx);
+            is_alive[idx] = true;
+        }
+    };
+
+
+    for(std::size_t i = 0 ; i < input_file_list.size() ; i++)
+    {
+        if (is_alive[i] == true)
+            file_idx_queue.push(i);
+    }
+
+    while(file_idx_queue.empty() == false)
+    {
+        auto idx = file_idx_queue.front();
+        file_idx_queue.pop();
+        nLinking_passes::Reference_dependent_file(input_file_list[idx], ctx, reference_file);
+    }
 
 }
