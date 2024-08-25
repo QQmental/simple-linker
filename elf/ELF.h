@@ -361,3 +361,14 @@ constexpr uint32_t SHT_RISC_V_ATTRIBUTES = 0x70000003;
 
 // RISC-V-specific segment types.
 constexpr uint32_t PT_RISC_V_ATTRIBUTES = 0x70000003; // meaning: RISC-V ELF attribute section.
+
+constexpr Elf64_Word gRISC_V_RVC_MASK = (Elf64_Word)1<<0;
+
+// 0b00 soft, 0b01 single, 0b10 double, 0b11 quad, the maximum is used 
+constexpr Elf64_Word gRISC_V_FLOAT_MASK = (Elf64_Word)0b11<<1;
+
+constexpr Elf64_Word gRISC_V_RVE_MASK = (Elf64_Word)1<<3;
+
+constexpr Elf64_Word gRISC_V_TSO_MASK = (Elf64_Word)1<<4;
+
+constexpr Elf64_Word gRISC_V_RESERVED_MASK = (Elf64_Word)0x3ffff<<5;

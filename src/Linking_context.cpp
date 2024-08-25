@@ -36,7 +36,7 @@ static void Load_archived_file_section(Linking_context &linking_ctx, const std::
 
 static void Collect_rel_file_content(Linking_context &linking_ctx, const Link_option_args &link_option_args);
 
-static void Remove_unusedd_symbol(Linking_context &ctx, 
+static void Remove_unused_symbol(Linking_context &ctx, 
                                   std::unordered_map<std::string_view, Linking_context::linking_package> &global_symbol_map,
                                   std::vector<bool> &is_alive);
 
@@ -284,9 +284,9 @@ static void Parse_args(Link_option_args *dst, int argc, char* argv[])
 }
 
 
-static void Remove_unusedd_symbol(Linking_context &ctx, 
-                                  std::unordered_map<std::string_view, Linking_context::linking_package> &global_symbol_map,
-                                  std::vector<bool> &is_alive)
+static void Remove_unused_symbol(Linking_context &ctx, 
+                                 std::unordered_map<std::string_view, Linking_context::linking_package> &global_symbol_map,
+                                 std::vector<bool> &is_alive)
 {
     for(auto it = global_symbol_map.begin() ; it != global_symbol_map.end() ;)
     {
@@ -337,7 +337,7 @@ void Linking_context::Link()
 
     nLinking_passes::Resolve_symbols(*this, m_input_file, m_is_alive);
 
-    Remove_unusedd_symbol(*this, m_global_symbol_map, m_is_alive);
+    Remove_unused_symbol(*this, m_global_symbol_map, m_is_alive);
     Remove_unused_file(m_input_file, m_is_alive);
     Remove_unused_file(m_rel_file, m_is_alive);
     m_is_alive.clear();
