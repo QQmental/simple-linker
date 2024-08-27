@@ -23,9 +23,10 @@ struct Output_section_key
     uint64_t type;
 };
 
+// Output_section consists of some Input_section and their offset from the begining of the osec
 struct Output_section : public Chunk
 {
-    Output_section(Output_section_key key) : Chunk(key.name), type(key.type){}
+    Output_section(Output_section_key key) : Chunk(key.name, false), type(key.type){}
     uint64_t type;
     std::vector<const Input_section*> member_list;
     std::vector<std::size_t> input_section_offset_list;

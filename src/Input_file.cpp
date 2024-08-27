@@ -194,7 +194,10 @@ void Input_file::Put_global_symbol(Linking_context &ctx)
 
         auto &link_pkg = ctx.Insert_global_symbol(*this, i);
 
-        symbol_list[i] = link_pkg.symbol.get();
+        // a symbol having weak flag and not being synthetic which is not supported
+        // Hence, no symbol's rank is compared.
+        symbol_list[i] = link_pkg.symbol.get(); 
+        symbol_list[i]->val = esym.st_value ;
     }
 }
 
@@ -322,7 +325,7 @@ void Input_file::Collect_mergeable_section_piece()
 
             for (std::size_t i = 0; i < m->piece_offset_list.size(); i++)
             {
-                Merged_section::Section_fragment *frag = m->final_dst->Insert(m->Get_contents(i), m->piece_hash_list[i], m->p2_align);
+                Merged_section::Piece *frag = m->final_dst->Insert(m->Get_contents(i), m->piece_hash_list[i], m->p2_align);
                 m->fragment_list[i] = frag;
             }
 
@@ -331,19 +334,6 @@ void Input_file::Collect_mergeable_section_piece()
             m->piece_hash_list.shrink_to_fit();
         }
     }
-
-/*     // some mergeable iput_section can be removed because data of it is stroed in Mergeable_section
-    auto f = [this](auto &item)->bool
-    {
-        return this->m_relocate_state_list[item.shndx] == eRelocate_state::mergeable;
-    };
-
-    auto remove_start = std::remove_if(input_section_list.begin(), input_section_list.end(), f);
-    
-    for(auto it = remove_start ; it != input_section_list.end() ; it++)
-        m_relocate_state_list[it->shndx] = eRelocate_state::no_need;
-
-    input_section_list.erase(remove_start, input_section_list.end()); */
 }
 
 void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
@@ -419,7 +409,7 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
 
             Mergeable_section &msection = *m_mergeable_section_list[m_src->get_shndx(esym)].get();
           
-            Merged_section::Section_fragment *mergeable_section_piece;
+            Merged_section::Piece *mergeable_section_piece;
             std::size_t piece_offset;
 
             std::tie(mergeable_section_piece, piece_offset) = msection.Get_mergeable_piece(esym.st_value + rel.r_addend);

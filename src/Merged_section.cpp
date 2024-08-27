@@ -9,7 +9,7 @@
 
 void Merged_section::Assign_offset()
 {
-    using item_t = std::pair<std::string_view, Section_fragment*>;
+    using item_t = std::pair<std::string_view, Piece*>;
 
     std::vector<item_t> vec(m_map.size());
 

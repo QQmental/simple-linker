@@ -47,6 +47,12 @@ public:
 
     const std::vector<eRelocate_state>& relocate_state_list() const {return m_relocate_state_list;}
     Input_section* Get_input_section(std::size_t shndx);
+    Input_section* Get_input_section(const Symbol &sym)
+    {
+        if (sym.mergeable_section_piece != nullptr)
+            return nullptr;
+        return Get_input_section(sym.file()->get_shndx(sym.elf_sym()));
+    }
     const Symbol* local_sym_list() const {return m_local_sym_list.get();}
     std::size_t n_local_sym() const {return m_n_local_sym;}
     Relocatable_file& src() const {return *m_src;}

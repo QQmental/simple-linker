@@ -3,7 +3,7 @@
 
 struct Symtab_section : public Chunk
 {
-    Symtab_section():Chunk(".symtab")
+    Symtab_section():Chunk(".symtab", false)
     {
         this->shdr.sh_type = SHT_SYMTAB;
         this->shdr.sh_entsize = sizeof(elf64_sym);

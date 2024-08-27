@@ -4,7 +4,7 @@
 class Symtab_shndx_section : public Chunk
 {
 public:
-    Symtab_shndx_section():Chunk(".symtab_shndx")
+    Symtab_shndx_section():Chunk(".symtab_shndx", false)
     {
         this->shdr.sh_type = SHT_SYMTAB_SHNDX;
         this->shdr.sh_entsize = 4;

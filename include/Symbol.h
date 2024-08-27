@@ -24,8 +24,9 @@ public:
 
     const elf64_sym& elf_sym() const {return file()->symbol_table()->data(sym_idx);}
     const Relocatable_file* file() const {return m_rel_file;}
+    Merged_section::Piece* piece() const {return mergeable_section_piece;}
 
-    void Set_piece(Merged_section::Section_fragment *src)
+    void Set_piece(Merged_section::Piece *src)
     {
         m_rel_file = nullptr;
         mergeable_section_piece = src;
@@ -33,7 +34,7 @@ public:
     Elf64_Addr val;
 
     const Relocatable_file *m_rel_file;
-    Merged_section::Section_fragment *mergeable_section_piece;
+    Merged_section::Piece *mergeable_section_piece;
     // index of this symbol in the relocatable file, or
     // relocation index in mergeable_section_piece
     std::size_t sym_idx;

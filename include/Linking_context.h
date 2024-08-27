@@ -24,8 +24,23 @@
 
 struct Merged_section;
 
+class Linking_context;
 
 
+
+struct Output_chunk
+{
+    template<typename chunk_t>
+    Output_chunk(chunk_t *chunk, Linking_context &ctx);
+    
+    bool is_osec() const {return m_is_osec;}
+
+    Chunk *chunk;
+    std::function<void()> update_shdr;
+    std::function<void()>  copy_buf;
+protected:
+    bool m_is_osec = false;
+};
 
 
 class Linking_context
@@ -121,7 +136,7 @@ public:
     Output_section* Insert_osec(std::unique_ptr<Output_section> src)
     {
         Output_section *ret = src.get();
-        m_osec_pool.push_back(std::move(src));
+        m_osec_pool.insert(std::make_pair(ret, std::move(src)));
         chunk_list.push_back(ret);
         return ret;
     }
@@ -130,6 +145,7 @@ public:
     chunk_t* Insert_chunk(std::unique_ptr<chunk_t> src)
     {
         static_assert(std::is_base_of<Chunk, chunk_t>::value == true);
+        static_assert(std::is_same_v<Output_section, chunk_t> == false);
         chunk_t *ret = src.get();
         m_chunk_pool.push_back(std::move(src));
         chunk_list.push_back(ret);
@@ -144,7 +160,7 @@ public:
 
     const std::vector<Input_file>& input_file_list() const {return m_input_file;}
 
-    const std::vector<std::unique_ptr<Output_section>>& osec_pool() {return m_osec_pool;}
+    const std::unordered_map<Output_section*, std::unique_ptr<Output_section>>& osec_pool() const {return m_osec_pool;}
 
     struct Output_merged_section_id
     {
@@ -170,6 +186,7 @@ public:
 
     std::unordered_map<Output_merged_section_id, std::unique_ptr<Merged_section>, Output_merged_section_id::Hash_func> merged_section_map;
     std::vector<Chunk*> chunk_list;
+    std::unique_ptr<uint8_t[]> buf;
     Output_phdr *phdr = nullptr;
     Output_ehdr *ehdr = nullptr;
     Output_shdr *shdr = nullptr;
@@ -179,6 +196,7 @@ public:
     Strtab_section *strtab_section = nullptr;
     Riscv_attributes_section *riscv_attributes_section = nullptr;
     Got_section *got = nullptr;
+    uint64_t image_base = 0x200000;
 
 
 private:
@@ -188,7 +206,7 @@ private:
     std::vector<Input_file> m_input_file;
     std::unordered_map<std::string_view, linking_package> m_global_symbol_map;
     std::vector<std::unique_ptr<char[]>> m_string_pool;
-    std::vector<std::unique_ptr<Output_section>> m_osec_pool;
+    std::unordered_map<Output_section*, std::unique_ptr<Output_section>> m_osec_pool;
     std::vector<std::unique_ptr<Chunk>> m_chunk_pool;
     Spin_lock m_lock;
 };

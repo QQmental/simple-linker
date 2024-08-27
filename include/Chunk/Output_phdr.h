@@ -3,7 +3,7 @@
 
 struct Output_phdr : public Chunk
 {
-    Output_phdr(uint32_t sh_flags):Chunk("PHDR")
+    Output_phdr(uint32_t sh_flags):Chunk("PHDR", true)
     {
         this->shdr.sh_flags = sh_flags;
         this->shdr.sh_addralign = sizeof(Elf64_Addr);

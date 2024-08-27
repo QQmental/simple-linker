@@ -245,9 +245,6 @@ void nLinking_passes::Combined_input_sections(Linking_context &ctx)
         item.second.osec->member_list.resize(*item.second.member_cnt);
     }
     
-
-    ctx.chunk_list.reserve(osec_map.size() - size + ctx.merged_section_map.size());
-    
     for(auto &obs : osec_map)
        ctx.Insert_osec(std::unique_ptr<Output_section>(obs.second.osec));
 
@@ -284,7 +281,7 @@ void nLinking_passes::Bind_special_symbols(Linking_context &ctx)
 
 void nLinking_passes::Assign_input_section_offset(Linking_context &ctx)
 {
-    for(auto &osec : ctx.osec_pool())
+    for(auto &[p_osec, osec]: ctx.osec_pool())
     {
         osec->input_section_offset_list.resize(osec->member_list.size());
         std::size_t offset = 0, p2align = 0;

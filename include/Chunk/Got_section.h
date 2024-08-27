@@ -3,7 +3,7 @@
 
 struct Got_section : public Chunk
 {
-    Got_section():Chunk(".got")
+    Got_section():Chunk(".got", false)
     {
         this->is_relro = true;
         this->shdr.sh_type = SHT_PROGBITS;

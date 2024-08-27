@@ -3,7 +3,7 @@
 
 struct Shstrtab_section : Chunk
 {
-    Shstrtab_section():Chunk(".shstrtab")
+    Shstrtab_section():Chunk(".shstrtab", false)
     {
         this->shdr.sh_type = SHT_STRTAB;
     }
