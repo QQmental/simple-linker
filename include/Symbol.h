@@ -26,17 +26,20 @@ public:
     const Relocatable_file* file() const {return m_rel_file;}
     Merged_section::Piece* piece() const {return mergeable_section_piece;}
 
-    void Set_piece(Merged_section::Piece *src)
+    void Set_piece(Merged_section::Piece &src)
     {
-        m_rel_file = nullptr;
-        mergeable_section_piece = src;
+        mergeable_section_piece = &src;
     }
-    Elf64_Addr val;
 
+
+private:
     const Relocatable_file *m_rel_file;
+
+public:
     Merged_section::Piece *mergeable_section_piece;
     // index of this symbol in the relocatable file, or
     // relocation index in mergeable_section_piece
     std::size_t sym_idx;
     std::string_view name;
+    Elf64_Addr val;
 };

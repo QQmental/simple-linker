@@ -47,7 +47,7 @@ public:
 
     const std::vector<eRelocate_state>& relocate_state_list() const {return m_relocate_state_list;}
     Input_section* Get_input_section(std::size_t shndx);
-    Input_section* Get_input_section(const Symbol &sym)
+    Input_section* Get_symbol_input_section(const Symbol &sym)
     {
         if (sym.mergeable_section_piece != nullptr)
             return nullptr;
@@ -59,6 +59,8 @@ public:
     std::string_view name() const {return m_src->name();} 
 
     std::vector<Symbol*> symbol_list;
+
+    //input sections are sorted by shndx
     std::vector<Input_section> input_section_list;
     bool has_init_array = false;
     bool has_ctors = false;

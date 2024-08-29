@@ -355,7 +355,7 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
             continue;
 
         auto pair = m_mergeable_section_list[shndx]->Get_mergeable_piece(esym.st_value);
-        sym->Set_piece(pair.first);
+        sym->Set_piece(*pair.first);
         sym->val = pair.second;
     }
 
@@ -420,7 +420,7 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
             auto &new_sym = m_mergeable_section_symbol_list[idx];
             new_sym.name = "<fragment>";
             new_sym.sym_idx = rel.sym();
-            new_sym.Set_piece(mergeable_section_piece);
+            new_sym.Set_piece(*mergeable_section_piece);
             new_sym.val = piece_offset - rel.r_addend;
             rel.Set_sym(m_src->symbol_table()->count() + idx); // redirect the relocation to the new symbol
             idx++;

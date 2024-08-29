@@ -27,7 +27,8 @@ struct Merged_section : public Chunk
                        : output_section(output_section),
                          is_alive(is_alive){}
                          
-
+        uint64_t Get_addr() const {return output_section.shdr.sh_addr + offset;}
+        
         Merged_section &output_section;
         uint32_t offset = -1;
         uint32_t p2align = 0;

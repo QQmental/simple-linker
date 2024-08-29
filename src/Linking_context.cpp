@@ -337,11 +337,26 @@ void Linking_context::Link()
 
     nLinking_passes::Resolve_symbols(*this, m_input_file, m_is_alive);
 
+    auto *input_file_data = m_input_file.data();
+    std::vector<uint32_t> offset_list(m_input_file.size());
+    for(std::size_t i = 0, new_place = 0 ; i < offset_list.size() ; i++)
+    {
+        if (m_is_alive[i] == true)
+            offset_list[i] = new_place++;
+    }
+
     Remove_unused_symbol(*this, m_global_symbol_map, m_is_alive);
     Remove_unused_file(m_input_file, m_is_alive);
     Remove_unused_file(m_rel_file, m_is_alive);
     m_is_alive.clear();
-    
+
+    for(auto &item : m_global_symbol_map)
+    {
+        auto new_offset = offset_list[item.second.input_file - input_file_data];
+        item.second.input_file =  &m_input_file[new_offset];
+    }
+
+
     for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
         m_input_file[i].Init_mergeable_section(*this);
 
@@ -358,7 +373,7 @@ void Linking_context::Link()
 
     nLinking_passes::Create_synthetic_sections(*this);
 
-    for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
+     for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
         nLinking_passes::Check_duplicate_smbols(m_input_file[i]);
 
     nLinking_passes::Combined_input_sections(*this);

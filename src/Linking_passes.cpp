@@ -11,66 +11,8 @@
 
 // a lot of code is copied from https://github.com/rui314/mold
 
-static bool Has_ctors_and_init_array(Linking_context &ctx);
-static uint64_t Canonicalize_type(std::string_view name, uint64_t type);
-static Output_section_key Get_output_section_key(const Input_section &isec, bool ctors_in_init_array);
 static uint64_t to_phdr_flags(Linking_context &ctx, const Chunk *chunk);
 
-static bool Has_ctors_and_init_array(Linking_context &ctx)
-{
-    bool x = false;
-    bool y = false;
-
-    for(const Input_file &file : ctx.input_file_list())
-    {
-        x |= file.has_ctors;
-        y |= file.has_init_array;
-    }
-
-    return x && y;
-}
-
-
-static uint64_t Canonicalize_type(std::string_view name, uint64_t type)
-{
-  // Some old assemblers don't recognize these section names and
-  // create them as SHT_PROGBITS.
-    if (type == SHT_PROGBITS)
-    {
-        if (name == ".init_array" || name.rfind(".init_array.", 0) == 0)
-            return SHT_INIT_ARRAY;
-        if (name == ".fini_array" || name.rfind(".fini_array.", 0) == 0)
-            return SHT_FINI_ARRAY;
-    }
-    return type;
-}
-
-
-static Output_section_key Get_output_section_key(const Input_section &isec, bool ctors_in_init_array)
-{
-    // If .init_array/.fini_array exist, .ctors/.dtors must be merged
-    // with them.
-    //
-    // CRT object files contain .ctors/.dtors sections without any
-    // relocations. They contain sentinel values, 0 and -1, to mark the
-    // beginning and the end of the initializer/finalizer pointer arrays.
-    // We do not place them into .init_array/.fini_array because such
-    // invalid pointer values would simply make the program to crash.
-    if (ctors_in_init_array && !isec.rel_count() == 0) {
-    std::string_view name = isec.name();
-    if (name == ".ctors" || name.rfind(".ctors.", 0) == 0)
-        return {".init_array", SHT_INIT_ARRAY};
-    if (name == ".dtors" || name.rfind(".dtors.", 0) == 0)
-        return {".fini_array", SHT_FINI_ARRAY};
-    }
-
-    auto &shdr = isec.shdr();
-    
-    std::string_view name = nELF_util::get_output_name(isec.name(), shdr.sh_flags);
-    uint64_t type = Canonicalize_type(name, shdr.sh_type);
-
-    return Output_section_key{name, type};
-}
 
 static uint64_t to_phdr_flags(Linking_context &ctx, const Chunk *chunk)
 {
@@ -85,6 +27,9 @@ static uint64_t to_phdr_flags(Linking_context &ctx, const Chunk *chunk)
 
 void nLinking_passes::Check_duplicate_smbols(const Input_file &file)
 {
+    if (file.src().symbol_table() == nullptr)
+        return;
+
     for (std::size_t i = file.n_local_sym(); i < file.src().symbol_table()->count(); i++)
     {
         auto &esym = file.src().symbol_table()->data(i);
@@ -130,7 +75,8 @@ void nLinking_passes::Reference_dependent_file(Input_file &input_file,
         // it's defined, don't mark alive its source, because it's itself
         bool undef = nELF_util::Is_sym_undef(esym) == false && nELF_util::Is_sym_weak(esym) == false;
         bool common = nELF_util::Is_sym_common(esym) && nELF_util::Is_sym_common(input_file.symbol_list[sym_idx]->elf_sym()) == false;
-        if (undef || common)
+        
+        if (undef ==false && common == false)
             continue;
         
         auto it = ctx.Find_symbol(nELF_util::Get_symbol_name(input_file.src(), sym_idx));
@@ -171,9 +117,7 @@ void nLinking_passes::Combined_input_sections(Linking_context &ctx)
     // so there is no life time issue due to Output_section*
     std::unordered_map<Output_section_key, Osec_bind_state, Output_section_key::Hash_func> osec_map;
 
-    std::size_t size = ctx.osec_pool().size();
-
-    bool ctors_in_init_array = Has_ctors_and_init_array(ctx);
+    bool ctors_in_init_array = ctx.Has_ctors_and_init_array();
 
     struct IN_OUT_section_bind
     {
@@ -211,7 +155,7 @@ void nLinking_passes::Combined_input_sections(Linking_context &ctx)
             
             auto merge_input_section = [&]()->void
             {
-                auto key = Get_output_section_key(isec, ctors_in_init_array);
+                auto key = ctx.Get_output_section_key(isec, ctors_in_init_array);
 
                 Osec_bind_state *targ;
 
