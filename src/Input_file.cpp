@@ -22,7 +22,7 @@ Get_merged_final_dst(Linking_context &ctx,
                      std::size_t entsize, 
                      std::size_t addralign);
 
-static void Sort_relocation(Input_file &input_file);
+static void Sort_relocation(const Input_file &input_file);
 
 static void Init_local_symbols(std::unique_ptr<Symbol[]> &dst, const Relocatable_file &rel_file, std::size_t n_local_sym)
 {
@@ -43,7 +43,7 @@ static void Init_local_symbols(std::unique_ptr<Symbol[]> &dst, const Relocatable
     }
 }
 
-static void Sort_relocation(Input_file &input_file)
+static void Sort_relocation(const Input_file &input_file)
 {
     for(std::size_t i = 0 ; i < input_file.src().section_hdr_table().header_count() ; i++)
     {
@@ -137,6 +137,8 @@ Input_file::Input_file(Relocatable_file &src) : m_src(&src)
         }
     }
 
+    input_section_list.shrink_to_fit();
+    
     if (m_src->symbol_table() == nullptr || m_src->symbol_table()->count() == 0)
         return;
 

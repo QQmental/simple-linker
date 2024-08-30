@@ -44,7 +44,8 @@ SRCS = main.cpp \
 	   Linking_passes.cpp \
        Input_file.cpp \
 	   Mergeable_section.cpp \
-	   Merged_section.cpp
+	   Merged_section.cpp \
+	   Output_chunk.cpp
 
 OBJS = $(addprefix $(Build)/,$(SRCS:%.cpp=%.o)) 
 
@@ -75,6 +76,9 @@ $(Build)/Mergeable_section.o: src/Mergeable_section.cpp
 	$(CC) $< $(CPP_FLAG) $(INCLUDE) -c -o $@
 
 $(Build)/Merged_section.o: src/Merged_section.cpp
+	$(CC) $< $(CPP_FLAG) $(INCLUDE) -c -o $@
+
+$(Build)/Output_chunk.o: src/Output_chunk.cpp
 	$(CC) $< $(CPP_FLAG) $(INCLUDE) -c -o $@
 
 ld: $(OBJS)

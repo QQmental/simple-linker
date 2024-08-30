@@ -35,11 +35,24 @@ struct Output_chunk
     template<typename chunk_t>
     Output_chunk(chunk_t *chunk, Linking_context &ctx);
     
+    void Update_shdr() const
+    {
+        if (m_update_shdr)
+            m_update_shdr();
+    }
+
+    void Copy_buf() const
+    {
+        if (m_copy_buf)
+            m_copy_buf();
+    }
+
     bool is_osec() const {return m_is_osec;}
 
+private:
     Chunk *chunk;
-    std::function<void()> update_shdr;
-    std::function<void()>  copy_buf;
+    std::function<void()> m_update_shdr;
+    std::function<void()>  m_copy_buf;
 protected:
     bool m_is_osec = false;
 };
