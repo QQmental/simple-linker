@@ -170,7 +170,8 @@ public:
 
     Merged_section* Insert_merged_section(const Output_merged_section_id &id, std::unique_ptr<Merged_section> src)
     {
-        return m_merged_section_map.insert(std::make_pair(id, std::move(src))).first->second.get();
+        Merged_section *ptr = m_merged_section_map.insert(std::make_pair(id, std::move(src))).first->second.get();
+        output_chunk_list.push_back(Output_chunk(ptr, *this));
     }
 
 
