@@ -1,8 +1,9 @@
 #pragma once
 #include "Chunk/Chunk.h"
 
-struct Got_section : public Chunk
+class Got_section : public Chunk
 {
+public:
     Got_section():Chunk(".got", false)
     {
         this->is_relro = true;

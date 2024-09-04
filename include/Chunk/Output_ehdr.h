@@ -1,8 +1,9 @@
 #pragma once
 #include "Chunk/Chunk.h"
 
-struct Output_ehdr : public Chunk
+class Output_ehdr : public Chunk
 {
+public:
     Output_ehdr(uint32_t sh_flags):Chunk("EHDR", true)
     {
         this->shdr.sh_flags = sh_flags;

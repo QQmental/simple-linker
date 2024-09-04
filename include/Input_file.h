@@ -25,14 +25,17 @@ public:
     Input_file& operator= (Input_file &&src) noexcept
     {
         symbol_list = std::move(src.symbol_list);
-        m_relocate_state_list = std::move(src.m_relocate_state_list);
         input_section_list = std::move(src.input_section_list);
+        has_init_array = src.has_init_array;
+        has_ctors = src.has_ctors;
+
+        m_mergeable_section_symbol_list = std::move(src.m_mergeable_section_symbol_list);
+        m_relocate_state_list = std::move(src.m_relocate_state_list);
         m_local_sym_list = std::move(src.m_local_sym_list);
         m_n_local_sym = src.m_n_local_sym;
         m_mergeable_section_list = std::move(src.m_mergeable_section_list);
         m_src = src.m_src;
-        has_init_array = src.has_init_array;
-        has_ctors = src.has_ctors;
+
         return *this;
     }
     ~Input_file();
@@ -49,7 +52,7 @@ public:
     Input_section* Get_input_section(std::size_t shndx);
     Input_section* Get_symbol_input_section(const Symbol &sym)
     {
-        if (sym.mergeable_section_piece != nullptr)
+        if (sym.piece() != nullptr)
             return nullptr;
         return Get_input_section(sym.file()->get_shndx(sym.elf_sym()));
     }

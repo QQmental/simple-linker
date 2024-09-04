@@ -5,7 +5,6 @@
 #include <unordered_map>
 #include <atomic>
 #include <type_traits>
-#include <functional>
 
 
 #include "elf/ELF.h"
@@ -22,40 +21,11 @@
 #include "Chunk/Symtab_section.h"
 #include "Chunk/Riscv_attributes_section.h"
 #include "Chunk/Got_section.h"
-
+#include "Output_chunk.h"
 
 struct Merged_section;
 
-class Linking_context;
 
-
-
-struct Output_chunk
-{
-    template<typename chunk_t>
-    Output_chunk(chunk_t *chunk, Linking_context &ctx);
-    
-    void Update_shdr() const
-    {
-        if (m_update_shdr)
-            m_update_shdr();
-    }
-
-    void Copy_buf() const
-    {
-        if (m_copy_buf)
-            m_copy_buf();
-    }
-
-    bool is_osec() const {return m_is_osec;}
-
-private:
-    Chunk *chunk;
-    std::function<void()> m_update_shdr;
-    std::function<void()>  m_copy_buf;
-protected:
-    bool m_is_osec = false;
-};
 
 
 class Linking_context
@@ -102,16 +72,7 @@ public:
         std::string_view init_name = "_init";
     }special_symbols;
 
-    void insert_object_file(Relocatable_file src, bool is_from_lib)
-    {
-        elf64_hdr hdr = src.elf_hdr();
-        
-        if (hdr.e_machine != (Elf64_Half)maching_option())
-            FATALF("%sincompatible maching type for the given relocatable file: ", "");
-
-        m_rel_file.push_back(std::make_unique<Relocatable_file>(std::move(src)));
-        m_is_alive.push_back(is_from_lib == false);
-    }
+    void insert_object_file(Relocatable_file src, bool is_from_lib);
 
     // return an iterator to the target, and the target has a const linking_package
     auto Find_symbol(std::string_view name) const
@@ -121,21 +82,7 @@ public:
         return it;
     }
 
-    //return its linking_package
-    linking_package& Insert_global_symbol(Input_file &symbol_input_file_src, std::size_t sym_idx)
-    {
-        linking_package lpkg;
-        lpkg.input_file = &symbol_input_file_src;
-        lpkg.symbol = std::make_unique<Symbol>(symbol_input_file_src.src(), sym_idx);
-        
-        std::string_view sym_name = lpkg.symbol->name;
-
-        m_lock.lock();
-        auto it = m_global_symbol_map.insert(std::make_pair(sym_name, std::move(lpkg)));
-        m_lock.unlock();
-        
-        return it.first->second;
-    }
+    linking_package& Insert_global_symbol(Input_file &symbol_input_file_src, std::size_t sym_idx);
 
     void Link();
 
@@ -157,7 +104,7 @@ public:
         key.type = src->type;
         
         m_osec_pool.insert(std::make_pair(key, std::move(src)));
-        chunk_list.push_back(ret);
+        output_chunk_list.push_back(Output_chunk(ret, *this));
         
         return ret;
     }
@@ -166,10 +113,10 @@ public:
     chunk_t* Insert_chunk(std::unique_ptr<chunk_t> src)
     {
         static_assert(std::is_base_of<Chunk, chunk_t>::value == true);
-        static_assert(std::is_same_v<Output_section, chunk_t> == false);
+        static_assert(std::is_same_v<Output_section, chunk_t> == false, "You should put Output_section by calling 'Insert_osec'");
         chunk_t *ret = src.get();
         m_chunk_pool.push_back(std::move(src));
-        chunk_list.push_back(ret);
+        output_chunk_list.push_back(Output_chunk(ret, *this));
         return ret;
     }
 
@@ -186,11 +133,14 @@ public:
 
     Link_option_args link_option_args() const {return m_link_option_args;}
 
+
+    
     const std::unordered_map<std::string_view, linking_package>& global_symbol_map() const {return m_global_symbol_map;}
 
     const std::vector<Input_file>& input_file_list() const {return m_input_file;}
 
     const std::unordered_map<Output_section_key, std::unique_ptr<Output_section>, Output_section_key::Hash_func>& osec_pool() const {return m_osec_pool;}
+
 
     struct Output_merged_section_id
     {
@@ -214,8 +164,18 @@ public:
         decltype(Elf64_Shdr::sh_entsize) entsize;
     };
 
-    std::unordered_map<Output_merged_section_id, std::unique_ptr<Merged_section>, Output_merged_section_id::Hash_func> merged_section_map;
-    std::vector<Chunk*> chunk_list;
+    const std::unordered_map<Output_merged_section_id, 
+                             std::unique_ptr<Merged_section>, 
+                             Output_merged_section_id::Hash_func>& merged_section_map() const {return m_merged_section_map;}
+
+    Merged_section* Insert_merged_section(const Output_merged_section_id &id, std::unique_ptr<Merged_section> src)
+    {
+        return m_merged_section_map.insert(std::make_pair(id, std::move(src))).first->second.get();
+    }
+
+
+    // Do not insert Output_chunk into this list directly, use 'Insert_chunk' or 'Insert_osec' instead
+    std::vector<Output_chunk> output_chunk_list;
     std::unique_ptr<uint8_t[]> buf;
     Output_phdr *phdr = nullptr;
     Output_ehdr *ehdr = nullptr;
@@ -226,24 +186,55 @@ public:
     Strtab_section *strtab_section = nullptr;
     Riscv_attributes_section *riscv_attributes_section = nullptr;
     Got_section *got = nullptr;
+    uint64_t page_size = 1<<12;
     uint64_t image_base = 0x200000;
-
+    // maybe default -1 is not a robust way to representing a null value 
+    uint64_t physical_image_base = (uint64_t)-1;
 
 private:
     Link_option_args m_link_option_args;
     std::vector<std::unique_ptr<Relocatable_file>> m_rel_file;
     std::vector<bool> m_is_alive;
     std::vector<Input_file> m_input_file;
+    std::unordered_map<Output_merged_section_id, std::unique_ptr<Merged_section>, Output_merged_section_id::Hash_func> m_merged_section_map;
     std::unordered_map<std::string_view, linking_package> m_global_symbol_map;
     std::vector<std::unique_ptr<char[]>> m_string_pool;
-    //std::unordered_map<Output_section*, std::unique_ptr<Output_section>> m_osec_pool;
     std::unordered_map<Output_section_key, std::unique_ptr<Output_section>, Output_section_key::Hash_func> m_osec_pool;
     std::vector<std::unique_ptr<Chunk>> m_chunk_pool;
     Spin_lock m_lock;
 };
 
-inline 
-Linking_context::Output_merged_section_id::
+
+inline void Linking_context::insert_object_file(Relocatable_file src, bool is_from_lib)
+{
+    elf64_hdr hdr = src.elf_hdr();
+    
+    if (hdr.e_machine != (Elf64_Half)maching_option())
+        FATALF("%sincompatible maching type for the given relocatable file: ", "");
+
+    m_rel_file.push_back(std::make_unique<Relocatable_file>(std::move(src)));
+    m_is_alive.push_back(is_from_lib == false);
+}
+
+//return its linking_package
+inline Linking_context::linking_package& 
+Linking_context::Insert_global_symbol(Input_file &symbol_input_file_src, std::size_t sym_idx)
+{
+    linking_package lpkg;
+    lpkg.input_file = &symbol_input_file_src;
+    lpkg.symbol = std::make_unique<Symbol>(symbol_input_file_src.src(), sym_idx);
+    
+    std::string_view sym_name = lpkg.symbol->name;
+
+    m_lock.lock();
+    auto it = m_global_symbol_map.insert(std::make_pair(sym_name, std::move(lpkg)));
+    m_lock.unlock();
+    
+    return it.first->second;
+}
+
+
+inline Linking_context::Output_merged_section_id::
 Output_merged_section_id(const Merged_section &src) 
                         :name(src.name), 
                          flags(src.shdr.sh_flags), 
@@ -354,19 +345,10 @@ inline uint64_t Linking_context::Get_symbol_addr(const Symbol &sym, uint64_t fla
         return piece->Get_addr() + sym.val;
     }
 
-    std::size_t idx = -1;
-    for(auto &rel_file_ptr : m_rel_file)
-    {
-        if (rel_file_ptr.get() == sym.file())
-        {
-            idx = &rel_file_ptr - &m_rel_file[0];
-            break;
-        }
-    }
-    assert(idx != (size_t)-1);
+    Input_file *input_file = global_symbol_map().find(sym.name)->second.input_file;
 
     //It's safe because nothing is modified
-    auto *isec = const_cast<Input_file&>(m_input_file[idx]).Get_symbol_input_section(sym);
+    Input_section *isec = input_file->Get_symbol_input_section(sym);
 
     if (isec == nullptr)
         return sym.val; // absolute symbol

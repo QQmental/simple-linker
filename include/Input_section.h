@@ -1,6 +1,7 @@
 #pragma once
 #include <string_view>
 #include "elf/ELF.h"
+#include "ELF_util.h"
 #include "Relocatable_file.h"
 
 struct Input_section

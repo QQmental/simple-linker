@@ -1,8 +1,9 @@
 #pragma once
 #include "Chunk/Chunk.h"
 
-struct Strtab_section : public Chunk
+class Strtab_section : public Chunk
 {
+public:
     Strtab_section():Chunk(".strtab", false)
     {
 

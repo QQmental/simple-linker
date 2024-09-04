@@ -1,8 +1,9 @@
 #pragma once
 #include "Chunk/Chunk.h"
 
-struct Output_shdr : public Chunk
+class Output_shdr : public Chunk
 {
+public:
     Output_shdr():Chunk("SHDR", true)
     {
         this->shdr.sh_size = 1;

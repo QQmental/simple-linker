@@ -36,8 +36,6 @@ static void Init_local_symbols(std::unique_ptr<Symbol[]> &dst, const Relocatable
         auto &elf_sym = rel_file.symbol_table()->data(i);
         if (nELF_util::Is_sym_common(elf_sym) == true)
             FATALF("%s", "local common??");
-
-        sym.val = elf_sym.st_value;
   
         dst[i] = std::move(sym);
     }
@@ -159,7 +157,7 @@ Input_file::Input_file(Relocatable_file &src) : m_src(&src)
             continue;
         
         if (m_relocate_state_list[shdr.sh_info] != eRelocate_state::relocatable)
-            FATALF("m_relocate_state_list[%d]: %d is not relocatable??", shdr.sh_info, m_relocate_state_list[shdr.sh_info]);
+            FATALF("m_relocate_state_list[%d]: %d is not relocatable??", shdr.sh_info, (uint32_t)m_relocate_state_list[shdr.sh_info]);
         
         if (auto *ptr = Get_input_section(shdr.sh_info) ; ptr != nullptr)
             ptr->Set_relsec_idx(i);
@@ -223,14 +221,14 @@ Get_merged_final_dst(Linking_context &ctx,
     id.type = type;
     id.flags = flags;
     id.entsize = entsize;
-    auto it = ctx.merged_section_map.find(id);
+    auto it = ctx.merged_section_map().find(id);
    
-    if (it != ctx.merged_section_map.end())
+    if (it != ctx.merged_section_map().end())
         return it->second.get();
 
     auto ptr = std::make_unique<Merged_section>(name, flags, type, entsize);
     
-    return ctx.merged_section_map.insert(std::make_pair(id, std::move(ptr))).first->second.get();
+    return ctx.Insert_merged_section(id, std::move(ptr));
 }             
 
 static std::unique_ptr<Mergeable_section> Split_section(const Relocatable_file &file, Linking_context &ctx, const Input_section &input_sec)

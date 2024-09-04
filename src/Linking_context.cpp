@@ -381,7 +381,7 @@ void Linking_context::Link()
 
     nLinking_passes::Bind_special_symbols(*this);
     
-    for(auto &item : merged_section_map)
+    for(auto &item : merged_section_map())
         item.second->Assign_offset();
 
     nLinking_passes::Create_synthetic_sections(*this);
@@ -395,5 +395,6 @@ void Linking_context::Link()
 
     nLinking_passes::Sort_output_sections(*this);
 
+    nLinking_passes::Compute_section_headers(*this);
 }
 

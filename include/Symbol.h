@@ -14,7 +14,8 @@ public:
          : m_rel_file(&rel_file),
            mergeable_section_piece(nullptr),
            sym_idx(sym_idx),
-           name(nELF_util::Get_symbol_name(*m_rel_file, sym_idx))
+           name(nELF_util::Get_symbol_name(*m_rel_file, sym_idx)),
+           val(rel_file.symbol_table()->data(sym_idx).st_value)
     {
         
     }
@@ -34,9 +35,9 @@ public:
 
 private:
     const Relocatable_file *m_rel_file;
+    Merged_section::Piece *mergeable_section_piece;
 
 public:
-    Merged_section::Piece *mergeable_section_piece;
     // index of this symbol in the relocatable file, or
     // relocation index in mergeable_section_piece
     std::size_t sym_idx;

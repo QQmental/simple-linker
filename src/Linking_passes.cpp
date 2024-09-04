@@ -11,20 +11,6 @@
 
 // a lot of code is copied from https://github.com/rui314/mold
 
-static uint64_t to_phdr_flags(Linking_context &ctx, const Chunk *chunk);
-
-
-static uint64_t to_phdr_flags(Linking_context &ctx, const Chunk *chunk)
-{
-  bool write = (chunk->shdr.sh_flags & SHF_WRITE);
-  bool exec = (chunk->shdr.sh_flags & SHF_EXECINSTR);
-
-  return  (uint64_t)eSegment_flag::PF_R 
-        | (write ? (uint64_t)eSegment_flag::PF_W : (uint64_t)eSegment_flag::PF_NONE)
-        | (exec ? (uint64_t)eSegment_flag::PF_X : (uint64_t)eSegment_flag::PF_NONE);
-}
-
-
 void nLinking_passes::Check_duplicate_smbols(const Input_file &file)
 {
     if (file.src().symbol_table() == nullptr)
@@ -95,6 +81,38 @@ void nLinking_passes::Reference_dependent_file(Input_file &input_file,
         reference_file(input_file);
     }
 }
+
+void nLinking_passes::Resolve_symbols(Linking_context &ctx, std::vector<Input_file> &input_file_list, std::vector<bool> &is_alive)
+{    
+    std::queue<std::size_t> file_idx_queue;
+
+    std::function reference_file = [&ctx, &input_file_list, &is_alive, &file_idx_queue](const Input_file &src)->void
+    {
+        assert(&src >= &*input_file_list.begin() && &src < &*input_file_list.end());
+        
+        auto idx = &src - &*input_file_list.begin();
+        if (is_alive[idx] == false)
+        {
+            file_idx_queue.push(idx);
+            is_alive[idx] = true;
+        }
+    };
+
+
+    for(std::size_t i = 0 ; i < input_file_list.size() ; i++)
+    {
+        if (is_alive[i] == true)
+            file_idx_queue.push(i);
+    }
+
+    while(file_idx_queue.empty() == false)
+    {
+        auto idx = file_idx_queue.front();
+        file_idx_queue.pop();
+        nLinking_passes::Reference_dependent_file(input_file_list[idx], ctx, reference_file);
+    }
+}
+
 void nLinking_passes::Combined_input_sections(Linking_context &ctx)
 {
     using counter_t = std::size_t;
@@ -298,44 +316,62 @@ void nLinking_passes::Sort_output_sections(Linking_context &ctx)
         return 0;
     };
 
-    std::sort(ctx.chunk_list.begin(),
-              ctx.chunk_list.end(), 
-              [&](const Chunk *a, const Chunk *b)
+    std::sort(ctx.output_chunk_list.begin(),
+              ctx.output_chunk_list.end(), 
+              [&](const Output_chunk &a, const Output_chunk &b)
               {
-                  return  std::tuple{get_rank1(a), get_rank2(a), a->name}
-                        < std::tuple{get_rank1(b), get_rank2(b), b->name};
+                  return  std::tuple{get_rank1(&a.chunk()), get_rank2(&a.chunk()), a.chunk().name}
+                        < std::tuple{get_rank1(&b.chunk()), get_rank2(&b.chunk()), b.chunk().name};
               });
 
 }
 
-void nLinking_passes::Resolve_symbols(Linking_context &ctx, std::vector<Input_file> &input_file_list, std::vector<bool> &is_alive)
-{    
-    std::queue<std::size_t> file_idx_queue;
 
-    std::function reference_file = [&ctx, &input_file_list, &is_alive, &file_idx_queue](const Input_file &src)->void
+
+
+void nLinking_passes::Compute_section_headers(Linking_context &ctx)
+{
+    // Update sh_size for each chunk.
+    for(auto &output_chunk : ctx.output_chunk_list)
+        output_chunk.Update_shdr();
+    
+    // Remove empty chunks.
+    for(auto it = ctx.output_chunk_list.begin() ; it != ctx.output_chunk_list.end() ;)
     {
-        assert(&src >= &*input_file_list.begin() && &src < &*input_file_list.end());
-        
-        auto idx = &src - &*input_file_list.begin();
-        if (is_alive[idx] == false)
-        {
-            file_idx_queue.push(idx);
-            is_alive[idx] = true;
-        }
-    };
-
-
-    for(std::size_t i = 0 ; i < input_file_list.size() ; i++)
-    {
-        if (is_alive[i] == true)
-            file_idx_queue.push(i);
+        if (   it->is_osec() == false && it->chunk().shdr.sh_size == 0)
+            it = ctx.output_chunk_list.erase(it);
+        else
+            ++it;
     }
 
-    while(file_idx_queue.empty() == false)
+    // Set section indices.
+    int64_t shndx = 1;
+    for (std::size_t i = 0; i < ctx.output_chunk_list.size(); i++)
     {
-        auto idx = file_idx_queue.front();
-        file_idx_queue.pop();
-        nLinking_passes::Reference_dependent_file(input_file_list[idx], ctx, reference_file);
+        if (ctx.output_chunk_list[i].chunk().is_header() == false)
+            ctx.output_chunk_list[i].chunk().shndx = shndx++;
+    }
+    
+    if (ctx.symtab_section && SHN_LORESERVE <= shndx)
+    {
+        Symtab_shndx_section *sec = new Symtab_shndx_section;
+        sec->shndx = shndx++;
+        sec->shdr.sh_link = ctx.symtab_section->shndx;
+        ctx.symtab_shndx_section = sec;
+        ctx.Insert_chunk(std::unique_ptr<Symtab_shndx_section>(sec));
     }
 
+    if (ctx.shdr)
+        ctx.shdr->shdr.sh_size = shndx * sizeof(elf64_shdr);
+    
+    // Some types of section header refer other section by index.
+    // Recompute the section header to fill such fields with correct values.
+    for (auto &output_chunk : ctx.output_chunk_list)
+        output_chunk.Update_shdr();
+
+    if (ctx.symtab_shndx_section)
+    {
+        std::size_t symtab_size = ctx.symtab_section->shdr.sh_size / sizeof(elf64_sym);
+        ctx.symtab_shndx_section->shdr.sh_size = symtab_size * 4;
+    }
 }

@@ -1,8 +1,9 @@
 #pragma once
 #include "Chunk/Chunk.h"
 
-struct Symtab_section : public Chunk
+class Symtab_section : public Chunk
 {
+public:
     Symtab_section():Chunk(".symtab", false)
     {
         this->shdr.sh_type = SHT_SYMTAB;

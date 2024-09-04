@@ -25,4 +25,6 @@ namespace nLinking_passes
     void Assign_input_section_offset(Linking_context &ctx);
 
     void Sort_output_sections(Linking_context &ctx);
+
+    void Compute_section_headers(Linking_context &ctx);
 }

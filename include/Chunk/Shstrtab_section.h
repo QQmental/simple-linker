@@ -1,8 +1,9 @@
 #pragma once
 #include "Chunk/Chunk.h"
 
-struct Shstrtab_section : Chunk
+class Shstrtab_section : public Chunk
 {
+public:
     Shstrtab_section():Chunk(".shstrtab", false)
     {
         this->shdr.sh_type = SHT_STRTAB;
