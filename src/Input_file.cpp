@@ -108,7 +108,9 @@ Input_file::Input_file(Relocatable_file &src) : m_src(&src)
             default:
                 std::string_view name = m_src->section_hdr_table().string_table().data() + shdr.sh_name;
 
-                if (name == ".debug_gnu_pubnames" || name == ".debug_gnu_pubtypes") // not supported 
+                if (   name == ".debug_gnu_pubnames"
+                    || name == ".debug_gnu_pubtypes"
+                    || name == ".eh_frame") // not supported 
                 {
                     m_relocate_state_list[i] = eRelocate_state::no_need;
                     break;
@@ -155,9 +157,6 @@ Input_file::Input_file(Relocatable_file &src) : m_src(&src)
 
         if (shdr.sh_type != SHT_REL && shdr.sh_type != SHT_RELA)
             continue;
-        
-        if (m_relocate_state_list[shdr.sh_info] != eRelocate_state::relocatable)
-            FATALF("m_relocate_state_list[%d]: %d is not relocatable??", shdr.sh_info, (uint32_t)m_relocate_state_list[shdr.sh_info]);
         
         if (auto *ptr = Get_input_section(shdr.sh_info) ; ptr != nullptr)
             ptr->Set_relsec_idx(i);

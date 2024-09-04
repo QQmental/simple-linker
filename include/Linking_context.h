@@ -114,6 +114,7 @@ public:
     {
         static_assert(std::is_base_of<Chunk, chunk_t>::value == true);
         static_assert(std::is_same_v<Output_section, chunk_t> == false, "You should put Output_section by calling 'Insert_osec'");
+        static_assert(std::is_same_v<Merged_section, chunk_t> == false, "You should put Merged_section by calling 'Insert_merged_section'");
         chunk_t *ret = src.get();
         m_chunk_pool.push_back(std::move(src));
         output_chunk_list.push_back(Output_chunk(ret, *this));
@@ -132,15 +133,12 @@ public:
     eLink_machine_optinon maching_option() const {return m_link_option_args.link_machine_optinon;}
 
     Link_option_args link_option_args() const {return m_link_option_args;}
-
-
     
     const std::unordered_map<std::string_view, linking_package>& global_symbol_map() const {return m_global_symbol_map;}
 
     const std::vector<Input_file>& input_file_list() const {return m_input_file;}
 
     const std::unordered_map<Output_section_key, std::unique_ptr<Output_section>, Output_section_key::Hash_func>& osec_pool() const {return m_osec_pool;}
-
 
     struct Output_merged_section_id
     {
@@ -172,6 +170,7 @@ public:
     {
         Merged_section *ptr = m_merged_section_map.insert(std::make_pair(id, std::move(src))).first->second.get();
         output_chunk_list.push_back(Output_chunk(ptr, *this));
+        return ptr;
     }
 
 
