@@ -6,10 +6,18 @@
 #include <queue>
 
 #include "Linking_passes.h"
+#include "Linking_context_helper.h"
 #include "ELF_util.h"
 #include "Chunk/Output_section.h"
 
+using nLinking_context_helper::to_phdr_flags;
+
 // a lot of code is copied from https://github.com/rui314/mold
+
+static void Set_virtual_addresses(Linking_context &ctx);
+static std::size_t Set_file_offsets(Linking_context &ctx);
+static bool is_tbss(Chunk *chunk);
+
 
 void nLinking_passes::Check_duplicate_smbols(const Input_file &file)
 {
@@ -374,4 +382,140 @@ void nLinking_passes::Compute_section_headers(Linking_context &ctx)
         std::size_t symtab_size = ctx.symtab_section->shdr.sh_size / sizeof(elf64_sym);
         ctx.symtab_shndx_section->shdr.sh_size = symtab_size * 4;
     }
+}
+
+static bool is_tbss(Chunk *chunk)
+{
+  return (chunk->shdr.sh_type == SHT_NOBITS) && (chunk->shdr.sh_flags & SHF_TLS);
+}
+
+//just cpoied from https://github.com/rui314/mold
+static void Set_virtual_addresses(Linking_context &ctx)
+{
+    uint64_t addr = ctx.image_base;
+
+    // Assign virtual addresses
+    auto &output_chunks = ctx.output_chunk_list;
+
+    // TLS chunks alignments are special: in addition to having their virtual
+    // addresses aligned, they also have to be aligned when the region of
+    // tls_begin is copied to a new thread's storage area. In other words, their
+    // offset against tls_begin also has to be aligned.
+    //
+    // A good way to achieve this is to take the largest alignment requirement
+    // of all TLS sections and make tls_begin also aligned to that.
+    Chunk *first_tls_chunk = nullptr;
+    uint64_t tls_alignment = 1;
+    for (Output_chunk &output_chunk : ctx.output_chunk_list)
+    {
+        if (output_chunk.chunk().shdr.sh_flags & SHF_TLS)
+        {
+            if (!first_tls_chunk)
+                first_tls_chunk = &output_chunk.chunk();
+            tls_alignment = std::max(tls_alignment, (uint64_t)output_chunk.chunk().shdr.sh_addralign);
+        }
+    }
+
+    auto alignment = [&](const Chunk &chunk)
+    {
+        return &chunk == first_tls_chunk ? tls_alignment : (uint64_t)chunk.shdr.sh_addralign;
+    };
+
+    for (uint64_t i = 0; i < output_chunks.size(); i++)
+    {
+        if (!(output_chunks[i].chunk().shdr.sh_flags & SHF_ALLOC))
+            continue;
+    
+        // Memory protection works at page size granularity. We need to
+        // put sections with different memory attributes into different
+        // pages. We do it by inserting paddings here.
+        if (i > 0)
+        {
+            uint64_t flags1 = to_phdr_flags(ctx, output_chunks[i - 1].chunk());
+            uint64_t flags2 = to_phdr_flags(ctx, output_chunks[i].chunk());
+            
+            if (flags1 != flags2)
+            {
+                if (addr % ctx.page_size != 0)
+                    addr += ctx.page_size;
+            }
+
+        }
+
+        // TLS BSS sections are laid out so that they overlap with the
+        // subsequent non-tbss sections. Overlapping is fine because a STT_TLS
+        // segment contains an initialization image for newly-created threads,
+        // and no one except the runtime reads its contents. Even the runtime
+        // doesn't need a BSS part of a TLS initialization image; it just
+        // leaves zero-initialized bytes as-is instead of copying zeros.
+        // So no one really read tbss at runtime.
+        //
+        // We can instead allocate a dedicated virtual address space to tbss,
+        // but that would be just a waste of the address and disk space.
+        if (is_tbss(&output_chunks[i].chunk()))
+        {
+            uint64_t addr2 = addr;
+            for (;;)
+            {
+                addr2 = nUtil::align_to(addr2, alignment(output_chunks[i].chunk()));
+                output_chunks[i].chunk().shdr.sh_addr = addr2;
+                addr2 += output_chunks[i].chunk().shdr.sh_size;
+                if (i + 2 == output_chunks.size() || !is_tbss(&output_chunks[i + 1].chunk()))
+                    break;
+                i++;
+            }
+            continue;
+        }
+
+        addr = nUtil::align_to(addr, alignment(output_chunks[i].chunk()));
+        output_chunks[i].chunk().shdr.sh_addr = addr;
+        addr += output_chunks[i].chunk().shdr.sh_size;
+    }
+}
+
+//just cpoied from https://github.com/rui314/mold
+static std::size_t Set_file_offsets(Linking_context &ctx)
+{
+    return 0;
+}
+
+
+[[nodiscard]] std::size_t nLinking_passes::Set_osec_offsets(Linking_context &ctx)
+{
+    Output_chunk *output_phdr = nullptr;
+
+    if (ctx.phdr)
+    {
+        for(auto &phdr : ctx.output_chunk_list)
+        {
+            if (&phdr.chunk() == ctx.phdr)
+            {
+                output_phdr = &phdr;
+                break;
+            }
+        }
+
+        if (output_phdr == nullptr)
+            FATALF("why ctx.phdr is not found?");
+    }
+    
+
+    for (;;)
+    {
+        Set_virtual_addresses(ctx);
+
+        // Assigning new offsets may change the contents and the length
+        // of the program header, so repeat it until converge.
+        std::size_t fileoff = Set_file_offsets(ctx);
+
+        if (ctx.phdr)
+        {
+            auto sz = ctx.phdr->shdr.sh_size;
+            output_phdr->Update_shdr();
+            if (sz != ctx.phdr->shdr.sh_size)
+                continue;
+        }
+
+        return fileoff;
+  }
 }

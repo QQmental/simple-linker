@@ -4,22 +4,13 @@
 #include "Output_chunk.h"
 #include "Linking_context.h"
 #include "elf/ELF.h"
+#include "Linking_context_helper.h"
 
-static uint64_t to_phdr_flags(Linking_context &ctx, const Chunk &chunk);
+using nLinking_context_helper::to_phdr_flags;
+
 static std::vector<Elf64_phdr_t> Create_phdrs(Linking_context &ctx);
 static uint64_t Get_eflags(const Linking_context &ctx);
 
-
-
-static uint64_t to_phdr_flags(Linking_context &ctx, const Chunk &chunk)
-{
-    bool write = (chunk.shdr.sh_flags & SHF_WRITE);
-    bool exec = (chunk.shdr.sh_flags & SHF_EXECINSTR);
-
-    return   (uint64_t)eSegment_flag::PF_R 
-           | (write ? (uint64_t)eSegment_flag::PF_W : (uint64_t)eSegment_flag::PF_NONE) 
-           | (exec ? (uint64_t)eSegment_flag::PF_X : (uint64_t)eSegment_flag::PF_NONE);
-}
 
 // just copied from mold
 static std::vector<Elf64_phdr_t> Create_phdrs(Linking_context &ctx)
@@ -135,6 +126,18 @@ static std::vector<Elf64_phdr_t> Create_phdrs(Linking_context &ctx)
         put_sec_into_seg(&chunks[i++]->chunk());
     }
 
+    // Create a PT_TLS.
+    for (std::size_t i = 0; i < ctx.output_chunk_list.size();)
+    {
+        Output_chunk *first = &ctx.output_chunk_list[i++];
+        if (first->chunk().shdr.sh_flags & SHF_TLS)
+        {
+            append_segment(PT_TLS, (uint64_t)eSegment_flag::PF_R, &first->chunk());
+            while (   i < ctx.output_chunk_list.size()
+                   && (ctx.output_chunk_list[i].chunk().shdr.sh_flags & SHF_TLS))
+                put_sec_into_seg(&ctx.output_chunk_list[i++].chunk());
+        }
+    }
 
     if (ctx.riscv_attributes_section && ctx.riscv_attributes_section->shdr.sh_size)
         append_segment(PT_RISC_V_ATTRIBUTES, (uint64_t)eSegment_flag::PF_R, ctx.riscv_attributes_section);

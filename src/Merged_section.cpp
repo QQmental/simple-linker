@@ -37,15 +37,15 @@ void Merged_section::Assign_offset()
 
     for(item_t &item : vec)
     {
-        auto *frag = item.second;
+        auto *piece = item.second;
 
-        if (frag->is_alive == false)
+        if (piece->is_alive == false)
             continue;
 
         offset = nUtil::align_to(offset, 1 << p2align);
-        frag->offset = offset;
+        piece->offset = offset;
         offset += item.first.size();
-        p2align = std::max(p2align, frag->p2align);
+        p2align = std::max(p2align, piece->p2align);
     }
 
     shdr.sh_size = offset;

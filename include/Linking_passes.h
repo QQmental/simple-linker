@@ -21,10 +21,12 @@ namespace nLinking_passes
 
     void Create_synthetic_sections(Linking_context &ctx);
 
-    // after assigning input section offset of Output_section, size of the Output_section is calculated
+    // after assigning input section offsets of Output_section, output section sizes are calculated
     void Assign_input_section_offset(Linking_context &ctx);
 
     void Sort_output_sections(Linking_context &ctx);
 
     void Compute_section_headers(Linking_context &ctx);
+
+    [[nodiscard]] std::size_t Set_osec_offsets(Linking_context &ctx);
 }

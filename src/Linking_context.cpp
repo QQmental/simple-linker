@@ -78,9 +78,9 @@ static std::vector<Link_option_args::path_of_file_t> Find_libraries(const Link_o
         for(const auto &lib_name : link_option_args.library_name)
         {
             // -LXXX -lYYY => XXX/libYYY.a
-            auto library = lib_path.substr(2, lib_path.length()) 
+            auto library = lib_path.substr(2, lib_path.length()) /* skip "-L" */
                          + "/lib"
-                         + lib_name.substr(2, lib_name.length())
+                         + lib_name.substr(2, lib_name.length()) /* skip "-l" */
                          + ".a";
 
             if (is_lib_found[&lib_name - &link_option_args.library_name[0]])

@@ -358,7 +358,7 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
         sym->val = pair.second;
     }
 
-    // calculate the number of mergeable section symbol
+    // calculate the number of relocation needed mergeable section symbol
     uint64_t nfrag_syms = 0;
     for(Input_section &isec : input_section_list)
     {
@@ -421,7 +421,8 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
             new_sym.sym_idx = rel.sym();
             new_sym.Set_piece(*mergeable_section_piece);
             new_sym.val = piece_offset - rel.r_addend;
-            rel.Set_sym(m_src->symbol_table()->count() + idx); // redirect the relocation to the new symbol
+            rel.Set_sym(m_src->symbol_table()->count() + idx); // redirect the relocation to the new symbol, 
+                                                               // the 'idx' is the index in m_mergeable_section_symbol_list
             idx++;
         }
     }

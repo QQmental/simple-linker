@@ -25,8 +25,8 @@ public:
     struct Piece
     {
         Piece(Merged_section &output_section, bool is_alive)
-                       : output_section(output_section),
-                         is_alive(is_alive){}
+            : output_section(output_section),
+              is_alive(is_alive){}
                          
         uint64_t Get_addr() const {return output_section.shdr.sh_addr + offset;}
         
