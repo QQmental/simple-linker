@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <atomic>
 #include <type_traits>
-
+#include <list>
 
 #include "elf/ELF.h"
 #include "Relocatable_file.h"
@@ -115,9 +115,11 @@ public:
         static_assert(std::is_base_of<Chunk, chunk_t>::value == true);
         static_assert(std::is_same_v<Output_section, chunk_t> == false, "You should put Output_section by calling 'Insert_osec'");
         static_assert(std::is_same_v<Merged_section, chunk_t> == false, "You should put Merged_section by calling 'Insert_merged_section'");
+        
         chunk_t *ret = src.get();
         m_chunk_pool.push_back(std::move(src));
         output_chunk_list.push_back(Output_chunk(ret, *this));
+        
         return ret;
     }
 
@@ -175,7 +177,7 @@ public:
 
 
     // Do not insert Output_chunk into this list directly, use 'Insert_chunk' or 'Insert_osec' instead
-    std::vector<Output_chunk> output_chunk_list;
+    std::list<Output_chunk> output_chunk_list;
     std::unique_ptr<uint8_t[]> buf;
     Output_phdr *phdr = nullptr;
     Output_ehdr *ehdr = nullptr;

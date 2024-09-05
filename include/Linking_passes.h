@@ -28,5 +28,6 @@ namespace nLinking_passes
 
     void Compute_section_headers(Linking_context &ctx);
 
-    [[nodiscard]] std::size_t Set_osec_offsets(Linking_context &ctx);
+    // assign virtual addresses and file offsets to output sections.
+    [[nodiscard]] std::size_t Set_osec_locations(Linking_context &ctx);
 }

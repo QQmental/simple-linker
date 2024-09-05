@@ -324,13 +324,11 @@ void nLinking_passes::Sort_output_sections(Linking_context &ctx)
         return 0;
     };
 
-    std::sort(ctx.output_chunk_list.begin(),
-              ctx.output_chunk_list.end(), 
-              [&](const Output_chunk &a, const Output_chunk &b)
-              {
-                  return  std::tuple{get_rank1(&a.chunk()), get_rank2(&a.chunk()), a.chunk().name}
-                        < std::tuple{get_rank1(&b.chunk()), get_rank2(&b.chunk()), b.chunk().name};
-              });
+    ctx.output_chunk_list.sort([&](const Output_chunk &a, const Output_chunk &b)
+    {
+        return  std::tuple{get_rank1(&a.chunk()), get_rank2(&a.chunk()), a.chunk().name}
+            < std::tuple{get_rank1(&b.chunk()), get_rank2(&b.chunk()), b.chunk().name};
+    });
 
 }
 
@@ -354,10 +352,10 @@ void nLinking_passes::Compute_section_headers(Linking_context &ctx)
 
     // Set section indices.
     int64_t shndx = 1;
-    for (std::size_t i = 0; i < ctx.output_chunk_list.size(); i++)
+    for (auto &output_chunk : ctx.output_chunk_list)
     {
-        if (ctx.output_chunk_list[i].chunk().is_header() == false)
-            ctx.output_chunk_list[i].chunk().shndx = shndx++;
+        if (output_chunk.chunk().is_header() == false)
+            output_chunk.chunk().shndx = shndx++;
     }
     
     if (ctx.symtab_section && SHN_LORESERVE <= shndx)
@@ -365,8 +363,7 @@ void nLinking_passes::Compute_section_headers(Linking_context &ctx)
         Symtab_shndx_section *sec = new Symtab_shndx_section;
         sec->shndx = shndx++;
         sec->shdr.sh_link = ctx.symtab_section->shndx;
-        ctx.symtab_shndx_section = sec;
-        ctx.Insert_chunk(std::unique_ptr<Symtab_shndx_section>(sec));
+        ctx.symtab_shndx_section = ctx.Insert_chunk(std::unique_ptr<Symtab_shndx_section>(sec));
     }
 
     if (ctx.shdr)
@@ -394,9 +391,6 @@ static void Set_virtual_addresses(Linking_context &ctx)
 {
     uint64_t addr = ctx.image_base;
 
-    // Assign virtual addresses
-    auto &output_chunks = ctx.output_chunk_list;
-
     // TLS chunks alignments are special: in addition to having their virtual
     // addresses aligned, they also have to be aligned when the region of
     // tls_begin is copied to a new thread's storage area. In other words, their
@@ -421,25 +415,25 @@ static void Set_virtual_addresses(Linking_context &ctx)
         return &chunk == first_tls_chunk ? tls_alignment : (uint64_t)chunk.shdr.sh_addralign;
     };
 
-    for (uint64_t i = 0; i < output_chunks.size(); i++)
+    uint64_t itor_counter = 0;
+    for (auto it = ctx.output_chunk_list.begin() ; it != ctx.output_chunk_list.end() ; ++it, itor_counter++)
     {
-        if (!(output_chunks[i].chunk().shdr.sh_flags & SHF_ALLOC))
+        if (!(it->chunk().shdr.sh_flags & SHF_ALLOC))
             continue;
     
         // Memory protection works at page size granularity. We need to
         // put sections with different memory attributes into different
         // pages. We do it by inserting paddings here.
-        if (i > 0)
+        if (it != ctx.output_chunk_list.begin())
         {
-            uint64_t flags1 = to_phdr_flags(ctx, output_chunks[i - 1].chunk());
-            uint64_t flags2 = to_phdr_flags(ctx, output_chunks[i].chunk());
+            uint64_t flags1 = to_phdr_flags(ctx, std::prev(it)->chunk());
+            uint64_t flags2 = to_phdr_flags(ctx, it->chunk());
             
             if (flags1 != flags2)
             {
                 if (addr % ctx.page_size != 0)
                     addr += ctx.page_size;
             }
-
         }
 
         // TLS BSS sections are laid out so that they overlap with the
@@ -452,54 +446,37 @@ static void Set_virtual_addresses(Linking_context &ctx)
         //
         // We can instead allocate a dedicated virtual address space to tbss,
         // but that would be just a waste of the address and disk space.
-        if (is_tbss(&output_chunks[i].chunk()))
+        if (is_tbss(&it->chunk()))
         {
             uint64_t addr2 = addr;
             for (;;)
             {
-                addr2 = nUtil::align_to(addr2, alignment(output_chunks[i].chunk()));
-                output_chunks[i].chunk().shdr.sh_addr = addr2;
-                addr2 += output_chunks[i].chunk().shdr.sh_size;
-                if (i + 2 == output_chunks.size() || !is_tbss(&output_chunks[i + 1].chunk()))
+                addr2 = nUtil::align_to(addr2, alignment(it->chunk()));
+                it->chunk().shdr.sh_addr = addr2;
+                addr2 += it->chunk().shdr.sh_size;
+                if (std::next(it, 2) == ctx.output_chunk_list.end() || !is_tbss(&std::next(it)->chunk()))
                     break;
-                i++;
+                ++it;
             }
             continue;
         }
 
-        addr = nUtil::align_to(addr, alignment(output_chunks[i].chunk()));
-        output_chunks[i].chunk().shdr.sh_addr = addr;
-        addr += output_chunks[i].chunk().shdr.sh_size;
+        addr = nUtil::align_to(addr, alignment(it->chunk()));
+        it->chunk().shdr.sh_addr = addr;
+        addr += it->chunk().shdr.sh_size;
     }
 }
 
-//just cpoied from https://github.com/rui314/mold
+// just cpoied from https://github.com/rui314/mold
+// assign file offset to output sections
 static std::size_t Set_file_offsets(Linking_context &ctx)
 {
     return 0;
 }
 
 
-[[nodiscard]] std::size_t nLinking_passes::Set_osec_offsets(Linking_context &ctx)
-{
-    Output_chunk *output_phdr = nullptr;
-
-    if (ctx.phdr)
-    {
-        for(auto &phdr : ctx.output_chunk_list)
-        {
-            if (&phdr.chunk() == ctx.phdr)
-            {
-                output_phdr = &phdr;
-                break;
-            }
-        }
-
-        if (output_phdr == nullptr)
-            FATALF("why ctx.phdr is not found?");
-    }
-    
-
+[[nodiscard]] std::size_t nLinking_passes::Set_osec_locations(Linking_context &ctx)
+{ 
     for (;;)
     {
         Set_virtual_addresses(ctx);
@@ -511,7 +488,8 @@ static std::size_t Set_file_offsets(Linking_context &ctx)
         if (ctx.phdr)
         {
             auto sz = ctx.phdr->shdr.sh_size;
-            output_phdr->Update_shdr();
+            Output_chunk(ctx.phdr, ctx).Update_shdr();
+            
             if (sz != ctx.phdr->shdr.sh_size)
                 continue;
         }

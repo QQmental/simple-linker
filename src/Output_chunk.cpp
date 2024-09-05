@@ -7,9 +7,9 @@
 #include "Linking_context_helper.h"
 
 using nLinking_context_helper::to_phdr_flags;
+using nLinking_context_helper::Get_eflags;
 
 static std::vector<Elf64_phdr_t> Create_phdrs(Linking_context &ctx);
-static uint64_t Get_eflags(const Linking_context &ctx);
 
 
 // just copied from mold
@@ -61,21 +61,21 @@ static std::vector<Elf64_phdr_t> Create_phdrs(Linking_context &ctx)
         return chunk.shdr.sh_type == SHT_NOTE;
     };
 
-
+    
     // When we are creating PT_LOAD segments, we consider only
     // the following chunks.
-    std::vector<Output_chunk*> chunks;
+    std::vector<Output_chunk*> loadable_chunks;
     for (Output_chunk &output_chunk : ctx.output_chunk_list)
     {
         if ((output_chunk.chunk().shdr.sh_flags & SHF_ALLOC) && !is_tbss(output_chunk.chunk()))
-            chunks.push_back(&output_chunk);
+            loadable_chunks.push_back(&output_chunk);
     }
 
     // The ELF spec says that "loadable segment entries in the program
     // header table appear in ascending order, sorted on the p_vaddr
     // member".
-    std::sort(chunks.begin(), 
-              chunks.end(), 
+    std::sort(loadable_chunks.begin(), 
+              loadable_chunks.end(), 
               [](const Output_chunk *a, const Output_chunk *b) {return a->chunk().shdr.sh_addr < b->chunk().shdr.sh_addr;});
 
     // Create a PT_PHDR for the program header itself.
@@ -84,25 +84,28 @@ static std::vector<Elf64_phdr_t> Create_phdrs(Linking_context &ctx)
 
 
     // Create a PT_NOTE for SHF_NOTE sections.
-    for (std::size_t i = 0; i < ctx.output_chunk_list.size();)
+    for (auto it = ctx.output_chunk_list.begin() ; it != ctx.output_chunk_list.end() ; )
     {
-        Output_chunk *first = &ctx.output_chunk_list[i++];
+        ++it;
+        Output_chunk *first = &*(std::prev(it));
+
         if (is_note(first->chunk()))
         {
             uint64_t flags = to_phdr_flags(ctx, first->chunk());
             append_segment(PT_NOTE, flags, &first->chunk());
 
-            while (   i < ctx.output_chunk_list.size()
-                   && is_note(ctx.output_chunk_list[i].chunk()) 
-                   && to_phdr_flags(ctx, ctx.output_chunk_list[i].chunk()) == flags)
-                put_sec_into_seg(&ctx.output_chunk_list[i++].chunk());
+            while (   it != ctx.output_chunk_list.end()
+                   && is_note(it->chunk()) 
+                   && to_phdr_flags(ctx, it->chunk()) == flags)
+                put_sec_into_seg(&(it++)->chunk());
         }
     }
 
     // Create PT_LOAD segments.
-    for (std::size_t i = 0; i < chunks.size();)
+    for (auto it = loadable_chunks.begin() ; it != loadable_chunks.end() ; )
     {
-        Output_chunk *first = chunks[i++];
+        ++it;
+        Output_chunk *first = *(std::prev(it));
         std::size_t flags = to_phdr_flags(ctx, first->chunk());
         append_segment(PT_LOAD, flags, &first->chunk());
         vec.back().p_align = std::max<uint64_t>(ctx.page_size, vec.back().p_align);
@@ -111,31 +114,38 @@ static std::vector<Elf64_phdr_t> Create_phdrs(Linking_context &ctx)
         // section flags and there's no on-disk gap in between.
         if (is_bss(first->chunk()) == false)
         {
-            while (   i < chunks.size()
-                   && is_bss(chunks[i]->chunk()) == false
-                   && to_phdr_flags(ctx, chunks[i]->chunk()) == flags
-                   && chunks[i]->chunk().shdr.sh_offset - first->chunk().shdr.sh_offset
-                      == chunks[i]->chunk().shdr.sh_addr - first->chunk().shdr.sh_addr)
-                put_sec_into_seg(&chunks[i++]->chunk());
+            while (   it != loadable_chunks.end()
+                   && is_bss((*it)->chunk()) == false
+                   && to_phdr_flags(ctx, (*it)->chunk()) == flags
+                   && (*it)->chunk().shdr.sh_offset - first->chunk().shdr.sh_offset
+                      == (*it)->chunk().shdr.sh_addr - first->chunk().shdr.sh_addr)
+            {
+                put_sec_into_seg(&(*it)->chunk());
+                ++it;
+            }
+
         }
 
-
-        while (   i < chunks.size()
-               && is_bss(chunks[i]->chunk())
-               && to_phdr_flags(ctx, chunks[i]->chunk()) == flags)
-        put_sec_into_seg(&chunks[i++]->chunk());
+        while (   it != loadable_chunks.end()
+               && is_bss((*it)->chunk())
+               && to_phdr_flags(ctx, (*it)->chunk()) == flags)
+        {
+            put_sec_into_seg(&(*it)->chunk());
+            ++it;
+        }
     }
 
     // Create a PT_TLS.
-    for (std::size_t i = 0; i < ctx.output_chunk_list.size();)
+    for (auto it = ctx.output_chunk_list.begin() ; it != ctx.output_chunk_list.end() ; )
     {
-        Output_chunk *first = &ctx.output_chunk_list[i++];
+        ++it;
+        Output_chunk *first = &*(std::prev(it));
         if (first->chunk().shdr.sh_flags & SHF_TLS)
         {
             append_segment(PT_TLS, (uint64_t)eSegment_flag::PF_R, &first->chunk());
-            while (   i < ctx.output_chunk_list.size()
-                   && (ctx.output_chunk_list[i].chunk().shdr.sh_flags & SHF_TLS))
-                put_sec_into_seg(&ctx.output_chunk_list[i++].chunk());
+            while (   it != ctx.output_chunk_list.end()
+                   && (it->chunk().shdr.sh_flags & SHF_TLS))
+                put_sec_into_seg(&(it++)->chunk());
         }
     }
 
@@ -193,56 +203,20 @@ static std::vector<Elf64_phdr_t> Create_phdrs(Linking_context &ctx)
             break;
         }
     }
-
     return vec;
 }
 
-static uint64_t Get_eflags(const Linking_context &ctx)
-{
 
-    if (ctx.input_file_list().empty() == true)
-        return 0;
-
-    uint32_t ret =  ctx.input_file_list()[0].src().elf_hdr().e_flags;
-
-    for (uint64_t i = 1; i < ctx.input_file_list().size(); i++)
-    {
-        uint32_t flags = ctx.input_file_list()[i].src().elf_hdr() .e_flags;
-
-        if (flags & gRISC_V_RVC_MASK)
-            ret |= gRISC_V_RVC_MASK;
-
-        if ((flags & gRISC_V_FLOAT_MASK) != (ret & gRISC_V_FLOAT_MASK))
-        {
-            std::cout << ctx.input_file_list()[i].name() \
-                      << "cannot link object files with different floating-point ABI from " \
-                      << ctx.input_file_list()[0].name()
-                      << "\n";
-            abort();
-        }
-
-
-        if ((flags & gRISC_V_RVE_MASK) != (ret & gRISC_V_RVE_MASK))
-        {
-            std::cout << ctx.input_file_list()[i].name() \
-                      << "cannot link object files with different EF_RISCV_RVE from " \
-                      << ctx.input_file_list()[0].name()
-                      << "\n";
-            abort();
-        }
-    }
-  return ret;
-}
 
 template<>
-Output_chunk::Output_chunk(Chunk *chunk, Linking_context &ctx):m_chunk(chunk)
+Output_chunk::Output_chunk<Chunk>(Chunk *chunk, Linking_context &ctx):m_chunk(chunk)
 {
 
 }
 
 
 template<>
-Output_chunk::Output_chunk(Output_ehdr *ehdr, Linking_context &ctx):m_chunk(ehdr)
+Output_chunk::Output_chunk<Output_ehdr>(Output_ehdr *ehdr, Linking_context &ctx):m_chunk(ehdr)
 {
     m_copy_buf = [ehdr, &ctx]()
     {
@@ -293,7 +267,7 @@ Output_chunk::Output_chunk(Output_ehdr *ehdr, Linking_context &ctx):m_chunk(ehdr
 }
 
 template<>
-Output_chunk::Output_chunk(Output_phdr *phdr, Linking_context &ctx):m_chunk(phdr)
+Output_chunk::Output_chunk<Output_phdr>(Output_phdr *phdr, Linking_context &ctx):m_chunk(phdr)
 {
     m_update_shdr = [&ctx, phdr]()
     {
@@ -305,7 +279,7 @@ Output_chunk::Output_chunk(Output_phdr *phdr, Linking_context &ctx):m_chunk(phdr
 
 
 template<>
-Output_chunk::Output_chunk(Output_shdr *shdr, Linking_context &ctx):m_chunk(shdr)
+Output_chunk::Output_chunk<Output_shdr>(Output_shdr *shdr, Linking_context &ctx):m_chunk(shdr)
 {
     
 }
@@ -318,38 +292,38 @@ Output_chunk::Output_chunk<Output_section>(Output_section *osec, Linking_context
 
 
 template<>
-Output_chunk::Output_chunk(Merged_section *msec, Linking_context &ctx):m_chunk(msec)
+Output_chunk::Output_chunk<Merged_section>(Merged_section *msec, Linking_context &ctx):m_chunk(msec)
 {
     
 }
 
 template<>
-Output_chunk::Output_chunk(Riscv_attributes_section *riscv_sec, Linking_context &ctx):m_chunk(riscv_sec)
+Output_chunk::Output_chunk<Riscv_attributes_section>(Riscv_attributes_section *riscv_sec, Linking_context &ctx):m_chunk(riscv_sec)
 {
     
 }
 
 
 template<>
-Output_chunk::Output_chunk(Shstrtab_section *sec, Linking_context &ctx):m_chunk(sec)
+Output_chunk::Output_chunk<Shstrtab_section>(Shstrtab_section *sec, Linking_context &ctx):m_chunk(sec)
 {
     
 }
 
 template<>
-Output_chunk::Output_chunk(Strtab_section *str_sec, Linking_context &ctx):m_chunk(str_sec)
+Output_chunk::Output_chunk<Strtab_section>(Strtab_section *str_sec, Linking_context &ctx):m_chunk(str_sec)
 {
     
 }
 
 template<>
-Output_chunk::Output_chunk(Symtab_section *sec, Linking_context &ctx):m_chunk(sec)
+Output_chunk::Output_chunk<Symtab_section>(Symtab_section *sec, Linking_context &ctx):m_chunk(sec)
 {
     
 }
 
 template<>
-Output_chunk::Output_chunk(Symtab_shndx_section *sec, Linking_context &ctx):m_chunk(sec)
+Output_chunk::Output_chunk<Symtab_shndx_section>(Symtab_shndx_section *sec, Linking_context &ctx):m_chunk(sec)
 {
     
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include <functional>
+#include <stdlib.h>
 
 #include "Chunk/Chunk.h"
 #include "Chunk/Merged_section.h"
@@ -16,10 +17,14 @@
 
 class Linking_context;
 
+
 struct Output_chunk
 {
-    template<typename chunk_t>
+
+    template<typename chunk_t = Chunk>
     Output_chunk(chunk_t *chunk, Linking_context &ctx);
+
+    ~Output_chunk() = default;
 
     void Update_shdr() const
     {
@@ -35,12 +40,15 @@ struct Output_chunk
 
     Chunk& chunk() const {return *m_chunk;}
     bool is_osec() const {return m_is_osec;}
+    
 
 private:
     Chunk *m_chunk;
     std::function<void()> m_update_shdr;
     std::function<void()>  m_copy_buf;
     bool m_is_osec = false;
+
+
 };
 
 template<>
