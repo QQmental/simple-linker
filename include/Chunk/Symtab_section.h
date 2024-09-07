@@ -1,7 +1,7 @@
 #pragma once
 #include "Chunk/Chunk.h"
 
-class Symtab_section : public Chunk
+class Symtab_section final : public Chunk
 {
 public:
     Symtab_section():Chunk(".symtab", false)

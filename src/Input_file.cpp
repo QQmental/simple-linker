@@ -195,8 +195,7 @@ void Input_file::Put_global_symbol(Linking_context &ctx)
 
         // a symbol having weak flag and not being synthetic which is not supported
         // Hence, no symbol's rank is compared.
-        symbol_list[i] = link_pkg.symbol.get(); 
-        symbol_list[i]->val = esym.st_value ;
+        symbol_list[i] = link_pkg.symbol.get();
     }
 }
 

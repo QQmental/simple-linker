@@ -1,7 +1,7 @@
 #pragma once
 #include "Chunk/Chunk.h"
 
-class Riscv_attributes_section : public Chunk
+class Riscv_attributes_section final : public Chunk
 {
 public:
     Riscv_attributes_section():Chunk(".riscv.attributes", false)

@@ -6,7 +6,7 @@
 #include "elf/ELF.h"
 #include "Chunk/Chunk.h"
 
-class Merged_section : public Chunk
+class Merged_section final : public Chunk
 {
 public:
     Merged_section(std::string_view name, int64_t flags, int64_t type, int64_t entsize) : Chunk(name, false)

@@ -24,7 +24,7 @@ struct Output_section_key
 };
 
 // Output_section consists of some Input_section and their offset from the begining of the osec
-class Output_section : public Chunk
+class Output_section final : public Chunk
 {
 public:
     Output_section(Output_section_key key) : Chunk(key.name, false), type(key.type){}

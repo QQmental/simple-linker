@@ -40,7 +40,6 @@ struct Output_chunk
 
     Chunk& chunk() const {return *m_chunk;}
     bool is_osec() const {return m_is_osec;}
-    
 
 private:
     Chunk *m_chunk;

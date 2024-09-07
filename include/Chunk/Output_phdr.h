@@ -1,7 +1,7 @@
 #pragma once
 #include "Chunk/Chunk.h"
 
-class Output_phdr : public Chunk
+class Output_phdr final : public Chunk 
 {
 public:
     Output_phdr(uint32_t sh_flags):Chunk("PHDR", true)

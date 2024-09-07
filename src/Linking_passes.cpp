@@ -17,6 +17,7 @@ using nLinking_context_helper::to_phdr_flags;
 static void Set_virtual_addresses(Linking_context &ctx);
 static std::size_t Set_file_offsets(Linking_context &ctx);
 static bool is_tbss(Chunk *chunk);
+static uint64_t align_with_skew(uint64_t val, uint64_t align, uint64_t skew);
 
 
 void nLinking_passes::Check_duplicate_smbols(const Input_file &file)
@@ -415,8 +416,7 @@ static void Set_virtual_addresses(Linking_context &ctx)
         return &chunk == first_tls_chunk ? tls_alignment : (uint64_t)chunk.shdr.sh_addralign;
     };
 
-    uint64_t itor_counter = 0;
-    for (auto it = ctx.output_chunk_list.begin() ; it != ctx.output_chunk_list.end() ; ++it, itor_counter++)
+    for (auto it = ctx.output_chunk_list.begin() ; it != ctx.output_chunk_list.end() ; ++it)
     {
         if (!(it->chunk().shdr.sh_flags & SHF_ALLOC))
             continue;
@@ -467,15 +467,97 @@ static void Set_virtual_addresses(Linking_context &ctx)
     }
 }
 
+
+// Returns the smallest integer N that satisfies N >= val and
+// N mod align == skew mod align.
+//
+// Section's file offset must be congruent to its virtual address modulo
+// the page size. We use this function to satisfy that requirement.
 // just cpoied from https://github.com/rui314/mold
-// assign file offset to output sections
-static std::size_t Set_file_offsets(Linking_context &ctx)
+static uint64_t align_with_skew(uint64_t val, uint64_t align, uint64_t skew)
 {
-    return 0;
+  uint64_t x = nUtil::align_down(val, align) + skew % align;
+  return (val <= x) ? x : x + align;
 }
 
 
-[[nodiscard]] std::size_t nLinking_passes::Set_osec_locations(Linking_context &ctx)
+
+
+
+
+// just cpoied from https://github.com/rui314/mold
+// assign file offset to output chunks
+static std::size_t Set_file_offsets(Linking_context &ctx)
+{
+    uint64_t fileoff = 0;
+
+    for(auto it = ctx.output_chunk_list.begin() ; it != ctx.output_chunk_list.end() ;)
+    {
+        Chunk &first = it->chunk();
+
+        if ((first.shdr.sh_flags & SHF_ALLOC) == false)
+        {
+            fileoff = nUtil::align_to(fileoff, first.shdr.sh_addralign);
+            first.shdr.sh_offset = fileoff;
+            fileoff += first.shdr.sh_size;
+            ++it;
+            continue;
+        }
+
+        if (first.shdr.sh_type == SHT_NOBITS)
+        {
+            first.shdr.sh_offset = fileoff;
+            ++it;
+            continue;
+        }
+
+        if (first.shdr.sh_addralign > ctx.page_size)
+            fileoff = nUtil::align_to(fileoff, first.shdr.sh_addralign);
+        else
+            fileoff = align_with_skew(fileoff, ctx.page_size, first.shdr.sh_addr);
+
+
+        // Assign ALLOC sections contiguous file offsets as long as they
+        // are contiguous in memory.
+        for (;;)
+        {
+            it->chunk().shdr.sh_offset = fileoff 
+                                       + it->chunk().shdr.sh_addr 
+                                       - first.shdr.sh_addr;
+            ++it;
+
+            if (   it == ctx.output_chunk_list.end()
+                || (it->chunk().shdr.sh_flags & SHF_ALLOC) == false
+                || it->chunk().shdr.sh_type == SHT_NOBITS)
+                break;
+
+            uint64_t gap_size = it->chunk().shdr.sh_addr 
+                              - std::prev(it)->chunk().shdr.sh_addr
+                              - std::prev(it)->chunk().shdr.sh_size;
+
+            // If --start-section is given, there may be a large gap between
+            // sections. We don't want to allocate a disk space for a gap if
+            // exists.
+            if (gap_size >= ctx.page_size)
+                break;
+        }
+
+        fileoff = std::prev(it)->chunk().shdr.sh_offset + std::prev(it)->chunk().shdr.sh_size;
+
+        while (   it != ctx.output_chunk_list.end()
+               && (it->chunk().shdr.sh_flags & SHF_ALLOC)
+               && it->chunk().shdr.sh_type == SHT_NOBITS)
+        {
+            it->chunk().shdr.sh_offset = fileoff;
+            ++it;
+        }
+    }
+
+    return fileoff;
+}
+
+
+[[nodiscard]] std::size_t nLinking_passes::Set_output_chunk_locations(Linking_context &ctx)
 { 
     for (;;)
     {

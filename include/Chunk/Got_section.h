@@ -1,7 +1,7 @@
 #pragma once
 #include "Chunk/Chunk.h"
 
-class Got_section : public Chunk
+class Got_section final : public Chunk
 {
 public:
     Got_section():Chunk(".got", false)

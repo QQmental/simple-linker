@@ -50,9 +50,10 @@ private:
     std::size_t m_rel_count;
 };
 
-
 inline nELF_util::ELF_Rel Input_section::rela_at(std::size_t idx) const
 {
+    assert(m_relsec_idx != -1);
+
     char *rel_section = rel_file->section(m_relsec_idx);
 
     if (rel_file->section_hdr(m_relsec_idx).sh_type == SHT_REL)

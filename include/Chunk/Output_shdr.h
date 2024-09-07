@@ -1,7 +1,7 @@
 #pragma once
 #include "Chunk/Chunk.h"
 
-class Output_shdr : public Chunk
+class Output_shdr final : public Chunk
 {
 public:
     Output_shdr():Chunk("SHDR", true)
