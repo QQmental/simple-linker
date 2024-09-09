@@ -319,12 +319,12 @@ void Input_file::Collect_mergeable_section_piece()
     {
         if (m)
         {
-            m->fragment_list.resize(m->piece_offset_list.size());
+            m->piece_list.resize(m->piece_offset_list.size());
 
             for (std::size_t i = 0; i < m->piece_offset_list.size(); i++)
             {
-                Merged_section::Piece *frag = m->final_dst->Insert(m->Get_contents(i), m->piece_hash_list[i], m->p2_align);
-                m->fragment_list[i] = frag;
+                Merged_section::Piece *piece = m->final_dst->Insert(m->Get_contents(i), m->piece_hash_list[i], m->p2_align);
+                m->piece_list[i] = piece;
             }
 
             // Reclaim memory as we'll never use this vector again

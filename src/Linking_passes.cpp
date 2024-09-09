@@ -37,10 +37,12 @@ void nLinking_passes::Check_duplicate_smbols(const Input_file &file)
             continue;
         if (nELF_util::Is_sym_undef(esym) || nELF_util::Is_sym_common(esym))
             continue;
-        
+    
         if (nELF_util::Is_sym_abs(esym) == false)
         {
             std::size_t shndx = file.src().get_shndx(esym);
+
+            // Skip if the symbol is in a dead section.
             if (file.relocate_state_list()[shndx] == Input_file::eRelocate_state::no_need)
                 continue;
         }

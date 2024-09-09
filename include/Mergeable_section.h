@@ -16,7 +16,7 @@ struct Mergeable_section
 	std::vector<uint32_t> piece_offset_list;
 	std::vector<uint64_t> piece_hash_list; // is it really needed?
 	std::size_t p2_align = 0;
-	std::vector<Merged_section::Piece*> fragment_list;
+	std::vector<Merged_section::Piece*> piece_list;
 	// all of mergeable section piece is merged into 'final_dst'
 	Merged_section *final_dst;
 
@@ -29,15 +29,15 @@ struct Mergeable_section
 		std::vector<uint32_t> &vec = piece_offset_list;
 		auto it = std::upper_bound(vec.begin(), vec.end(), offset);
 		std::size_t idx = it - 1 - vec.begin();
-		return std::make_pair(fragment_list[idx], offset - vec[idx]);
+		return std::make_pair(piece_list[idx], offset - vec[idx]);
 	}
 
-	std::string_view Get_contents(uint64_t frag_idx)
+	std::string_view Get_contents(uint64_t piece_idx)
 	{
-		uint64_t cur = piece_offset_list[frag_idx];
-		if (frag_idx == piece_offset_list.size() - 1)
+		uint64_t cur = piece_offset_list[piece_idx];
+		if (piece_idx == piece_offset_list.size() - 1)
 			return data.substr(cur);
-		return data.substr(cur, piece_offset_list[frag_idx + 1] - cur);
+		return data.substr(cur, piece_offset_list[piece_idx + 1] - cur);
 	}
 
 };

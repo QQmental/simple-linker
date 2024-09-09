@@ -24,11 +24,14 @@ public:
 
     Relocatable_file& operator= (Relocatable_file &&src) noexcept
     {
-        m_section_hdr_table = std::move(src.m_section_hdr_table); 
-        m_symbol_table = std::move(src.m_symbol_table);
-        m_data = std::move(src.m_data);
-        m_linking_mdata = std::move(src.m_linking_mdata);
-        m_name = std::move(src.m_name);
+        if (this != &src)
+        {
+            m_section_hdr_table = std::move(src.m_section_hdr_table); 
+            m_symbol_table = std::move(src.m_symbol_table);
+            m_data = std::move(src.m_data);
+            m_linking_mdata = std::move(src.m_linking_mdata);
+            m_name = std::move(src.m_name);
+        }
         return *this;
     }
     ~Relocatable_file() = default;

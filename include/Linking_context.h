@@ -22,6 +22,7 @@
 #include "Chunk/Riscv_attributes_section.h"
 #include "Chunk/Got_section.h"
 #include "Output_chunk.h"
+#include "Output_file.h"
 
 struct Merged_section;
 
@@ -179,6 +180,7 @@ public:
     // Do not insert Output_chunk into this list directly, use 'Insert_chunk' or 'Insert_osec' instead
     std::list<Output_chunk> output_chunk_list;
     std::unique_ptr<uint8_t[]> buf;
+    Output_file output_file;
     Output_phdr *phdr = nullptr;
     Output_ehdr *ehdr = nullptr;
     Output_shdr *shdr = nullptr;
@@ -238,7 +240,7 @@ Linking_context::Insert_global_symbol(Input_file &symbol_input_file_src, std::si
 
 inline Linking_context::Output_merged_section_id::
 Output_merged_section_id(const Merged_section &src) 
-                        :name(src.name), 
+                       : name(src.name), 
                          flags(src.shdr.sh_flags), 
                          type(src.shdr.sh_type), 
                          entsize(src.shdr.sh_entsize){}

@@ -3,6 +3,7 @@
 #include <numeric>
 #include <iostream>
 #include <fstream>
+#include <filesystem>
 #include "Linking_context.h"
 #include "Relocatable_file.h"
 #include "util.h"
@@ -396,5 +397,15 @@ void Linking_context::Link()
     nLinking_passes::Sort_output_sections(*this);
 
     nLinking_passes::Compute_section_headers(*this);
+
+    auto filesize = nLinking_passes::Set_output_chunk_locations(*this);
+
+    using perm_t = std::filesystem::perms;
+    
+    auto perms = perm_t::owner_all 
+               | perm_t::group_exec | perm_t::group_read 
+               | perm_t::others_exec | perm_t::others_read;
+    
+    output_file = Output_file(*this, m_link_option_args.output_file, filesize, perms);
 }
 

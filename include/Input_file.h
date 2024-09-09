@@ -24,17 +24,20 @@ public:
     Input_file(Input_file &&src) = default;
     Input_file& operator= (Input_file &&src) noexcept
     {
-        symbol_list = std::move(src.symbol_list);
-        input_section_list = std::move(src.input_section_list);
-        has_init_array = src.has_init_array;
-        has_ctors = src.has_ctors;
+        if (this != &src)
+        {
+            symbol_list = std::move(src.symbol_list);
+            input_section_list = std::move(src.input_section_list);
+            has_init_array = src.has_init_array;
+            has_ctors = src.has_ctors;
 
-        m_mergeable_section_symbol_list = std::move(src.m_mergeable_section_symbol_list);
-        m_relocate_state_list = std::move(src.m_relocate_state_list);
-        m_local_sym_list = std::move(src.m_local_sym_list);
-        m_n_local_sym = src.m_n_local_sym;
-        m_mergeable_section_list = std::move(src.m_mergeable_section_list);
-        m_src = src.m_src;
+            m_mergeable_section_symbol_list = std::move(src.m_mergeable_section_symbol_list);
+            m_relocate_state_list = std::move(src.m_relocate_state_list);
+            m_local_sym_list = std::move(src.m_local_sym_list);
+            m_n_local_sym = src.m_n_local_sym;
+            m_mergeable_section_list = std::move(src.m_mergeable_section_list);
+            m_src = src.m_src;
+        }
 
         return *this;
     }
