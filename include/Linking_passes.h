@@ -30,4 +30,6 @@ namespace nLinking_passes
 
     // assign virtual addresses and file offsets to ouput chunks.
     [[nodiscard]] std::size_t Set_output_chunk_locations(Linking_context &ctx);
+
+    void Copy_chunk(Linking_context &ctx);
 }

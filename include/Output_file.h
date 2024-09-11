@@ -1,10 +1,10 @@
 #pragma once
-#include <filesystem>
-#include <fstream>
 #include <fstream>
 #include <bitset>
 #include <iostream>
 #include <filesystem>
+#include <memory>
+
 #include "Linking_context.h"
 
 class Output_file
@@ -14,7 +14,7 @@ public:
     Output_file() = default;
 
     Output_file(Linking_context &ctx, std::string in_path, uint64_t filesize, std::filesystem::perms permission) 
-              : path(in_path), filesize(filesize)
+              : path(in_path), filesize(filesize), m_buf(std::make_unique<uint8_t[]>(filesize))
     {
         namespace fs = std::filesystem;
         
@@ -33,11 +33,14 @@ public:
     Output_file(const Output_file &src) = delete;
 
     Output_file(Output_file &&src) noexcept
-              : buf(src.buf), 
-                buf2(std::move(src.buf2)), 
+              : buf2(std::move(src.buf2)), 
                 path(std::move(src.path)),
                 filesize(src.filesize),
-                fout(std::move(src.fout)){}
+                m_buf(std::move(src.m_buf)),
+                fout(std::move(src.fout))
+    {
+        src.filesize = 0;
+    }
 
     Output_file& operator=(Output_file &&src)
     {
@@ -55,11 +58,18 @@ public:
             fout.close();
     }
 
-    char *buf = nullptr;
+    void Serialize()
+    {
+        fout.write(reinterpret_cast<char*>(buf()), filesize);
+    }
+
+    uint8_t* buf() const {return m_buf.get();}
+
     std::vector<char> buf2;
     std::string path;
     uint64_t filesize = 0;
 
 private:
+    std::unique_ptr<uint8_t[]> m_buf = nullptr;
     std::ofstream fout;
 };

@@ -20,6 +20,10 @@ public:
     
     Piece* Insert(std::string_view key, uint64_t hash, uint32_t p2align);
 
+    const std::unordered_map<std::string_view, std::unique_ptr<Piece>>& piece_map() const {return m_map;}
+    
+    std::vector<std::pair<std::string_view, Piece*>> Get_ordered_span() const ;
+
     void Assign_offset();
 
     struct Piece

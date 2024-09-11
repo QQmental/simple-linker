@@ -5,9 +5,9 @@
 #include "Chunk/Merged_section.h"
 #include "util.h"
 
-
-
-void Merged_section::Assign_offset()
+// sort mergeable section pieces in some order,
+// then assign offest in this order.
+std::vector<std::pair<std::string_view, Merged_section::Piece*>> Merged_section::Get_ordered_span() const
 {
     using item_t = std::pair<std::string_view, Piece*>;
 
@@ -31,7 +31,15 @@ void Merged_section::Assign_offset()
     
     std::sort(vec.begin(), vec.end(), cmp);
 
-    
+    return vec;
+}
+
+void Merged_section::Assign_offset()
+{
+    auto vec = Get_ordered_span();
+
+    using item_t = std::decay_t<decltype(*vec.begin())>;
+
     std::size_t offset = 0;
     uint32_t p2align = 0;
 

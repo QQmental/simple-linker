@@ -209,18 +209,19 @@ static std::vector<Elf64_phdr_t> Create_phdrs(Linking_context &ctx)
 
 
 template<>
-Output_chunk::Output_chunk<Chunk>(Chunk *chunk, Linking_context &ctx):m_chunk(chunk)
+Output_chunk::Output_chunk<Chunk>(Chunk *chunk, Linking_context &ctx):m_chunk(chunk), m_ctx(&ctx)
 {
 
 }
 
 
 template<>
-Output_chunk::Output_chunk<Output_ehdr>(Output_ehdr *ehdr, Linking_context &ctx):m_chunk(ehdr)
+Output_chunk::Output_chunk<Output_ehdr>(Output_ehdr *ehdr, Linking_context &ctx):m_chunk(ehdr), m_ctx(&ctx)
 {
-    m_copy_buf = [ehdr, &ctx]()
+    m_copy_chunk = [](Chunk *_ehdr, Linking_context &ctx)
     {
-        Elf64_Ehdr &hdr = *(Elf64_Ehdr*)(ctx.buf.get() + ehdr->shdr.sh_offset);
+        auto *ehdr = (Output_ehdr*)_ehdr;
+        Elf64_Ehdr &hdr = *(Elf64_Ehdr*)(ctx.buf + ehdr->shdr.sh_offset);
         memset(&hdr, 0, sizeof(hdr));
         memcpy(&hdr.e_ident, "\177ELF", 4);  // write magic
         hdr.e_ident[EI_CLASS] = ELFCLASS64 ; // only 64 bit target supported now
@@ -263,67 +264,163 @@ Output_chunk::Output_chunk<Output_ehdr>(Output_ehdr *ehdr, Linking_context &ctx)
             int64_t shnum = ctx.shdr->shdr.sh_size / sizeof(Elf64_Shdr);
             hdr.e_shnum = (shnum <= UINT16_MAX) ? shnum : 0;
         }
-    }; // m_copy_buf
+    }; // m_copy_chunk
 }
 
 template<>
-Output_chunk::Output_chunk<Output_phdr>(Output_phdr *phdr, Linking_context &ctx):m_chunk(phdr)
+Output_chunk::Output_chunk<Output_phdr>(Output_phdr *phdr, Linking_context &ctx):m_chunk(phdr), m_ctx(&ctx)
 {
-    m_update_shdr = [&ctx, phdr]()
+    m_update_shdr = [](Chunk *_phdr, Linking_context &ctx)
     {
+        auto *phdr = (Output_phdr*)_phdr;
         phdr->phdrs = Create_phdrs(ctx);
         phdr->shdr.sh_size = phdr->phdrs.size() * sizeof(Elf64_phdr_t);
     };
+
+
+    m_copy_chunk = [](Chunk *_phdr, Linking_context &ctx)
+    {
+        auto *phdr = (Output_phdr*)_phdr;
+        memcpy(ctx.buf + phdr->shdr.sh_offset, 
+               phdr->phdrs.data(), 
+               phdr->phdrs.size() * sizeof(Elf64_phdr_t));
+    };
+
+
 }
 
 
 
 template<>
-Output_chunk::Output_chunk<Output_shdr>(Output_shdr *shdr, Linking_context &ctx):m_chunk(shdr)
+Output_chunk::Output_chunk<Output_shdr>(Output_shdr *shdr, Linking_context &ctx):m_chunk(shdr), m_ctx(&ctx)
+{
+    m_copy_chunk = [](Chunk *_shdr, Linking_context &ctx)
+    {
+        auto *shdr = (Output_shdr*)_shdr;
+        elf64_shdr *hdr = (elf64_shdr*)(ctx.buf + shdr->shdr.sh_offset);
+        memset(hdr, 0, shdr->shdr.sh_size);
+
+        //the first entry in section header table is a special entry
+
+        if (ctx.shstrtab_section && SHN_LORESERVE <= ctx.shstrtab_section->shndx)
+            hdr[0].sh_link = ctx.shstrtab_section->shndx;
+
+        uint64_t shnum = ctx.shdr->shdr.sh_size / sizeof(elf64_shdr);
+        if (UINT16_MAX < shnum)
+            hdr[0].sh_size = shnum;
+
+        for (Output_chunk &output_chunk : ctx.output_chunk_list)
+        {
+            if (output_chunk.chunk().shndx)
+                hdr[output_chunk.chunk().shndx] = output_chunk.chunk().shdr;
+        }
+    };    
+}
+
+template<>
+Output_chunk::Output_chunk<Output_section>(Output_section *osec, Linking_context &ctx):m_chunk(osec), m_ctx(&ctx), m_is_osec(true)
+{
+    m_copy_chunk = [](Chunk *_output_section, Linking_context &ctx)
+    {
+        auto *output_section = (Output_section*)_output_section;
+
+        uint8_t *buf = ctx.buf + output_section->shdr.sh_offset;
+
+        if (output_section->shdr.sh_type == SHT_NOBITS)
+            return;
+
+        for(std::size_t i = 0 ; i < output_section->member_list.size() ; i++)
+        {
+            auto &isec = *output_section->member_list[i];
+            auto offset = output_section->input_section_offset_list[i];
+
+            memcpy(buf + offset, isec.data.begin(), isec.data.length());
+            
+            // Clear trailing padding. We write trap or nop instructions for
+            // an executable segment so that a disassembler wouldn't try to
+            // disassemble garbage as instructions.
+            uint64_t this_end = offset + isec.shdr().sh_size;
+            uint64_t next_start;
+            if (i + 1 < output_section->member_list.size())
+                next_start = output_section->input_section_offset_list[i + 1];
+            else
+                next_start = output_section->shdr.sh_size;
+
+            uint8_t *loc = buf + this_end;
+            uint64_t size = next_start - this_end;     
+
+            // 'filler' is a machine-dependant varriable
+            constexpr uint8_t filler[] = { 0x02, 0x90 }; // c.ebreak, risc-v instruction
+
+            if (output_section->shdr.sh_flags & SHF_EXECINSTR)
+            {
+                for (uint64_t i = 0; i + sizeof(filler) <= size; i += sizeof(filler))
+                    memcpy(loc + i, filler, sizeof(filler));
+            }
+            else
+                memset(loc, 0, size); 
+        }
+    };// m_copy_chunk
+}
+
+
+template<>
+Output_chunk::Output_chunk<Merged_section>(Merged_section *msec, Linking_context &ctx):m_chunk(msec), m_ctx(&ctx)
+{
+    m_copy_chunk = [](Chunk *_msec, Linking_context &ctx)
+    {
+        auto *msec = (Merged_section*)_msec;
+
+        uint8_t *buf = ctx.buf + msec->shdr.sh_offset;
+
+        auto vec = msec->Get_ordered_span();
+        for(std::size_t i = 0 ; i < vec.size() ; i++)
+        {
+            if (vec[i].second->is_alive == false)
+                continue;
+
+            // There might be gaps between strings to satisfy alignment requirements.
+            // If that's the case, we need to zero-clear them.    
+            if (i + 1 != vec.size())
+            {
+                memset(buf + vec[i].second->offset + vec[i].first.length(), 
+                       0, 
+                       vec[i+1].second->offset - vec[i].first.length());
+            }
+
+            memcpy(buf + vec[i].second->offset, vec[i].first.data(), vec[i].first.length());
+        }
+        
+    };
+}
+
+template<>
+Output_chunk::Output_chunk<Riscv_attributes_section>(Riscv_attributes_section *riscv_sec, Linking_context &ctx):m_chunk(riscv_sec), m_ctx(&ctx)
+{
+    
+}
+
+
+template<>
+Output_chunk::Output_chunk<Shstrtab_section>(Shstrtab_section *sec, Linking_context &ctx):m_chunk(sec), m_ctx(&ctx)
 {
     
 }
 
 template<>
-Output_chunk::Output_chunk<Output_section>(Output_section *osec, Linking_context &ctx):m_chunk(osec), m_is_osec(true)
-{
-    
-}
-
-
-template<>
-Output_chunk::Output_chunk<Merged_section>(Merged_section *msec, Linking_context &ctx):m_chunk(msec)
+Output_chunk::Output_chunk<Strtab_section>(Strtab_section *str_sec, Linking_context &ctx):m_chunk(str_sec), m_ctx(&ctx)
 {
     
 }
 
 template<>
-Output_chunk::Output_chunk<Riscv_attributes_section>(Riscv_attributes_section *riscv_sec, Linking_context &ctx):m_chunk(riscv_sec)
-{
-    
-}
-
-
-template<>
-Output_chunk::Output_chunk<Shstrtab_section>(Shstrtab_section *sec, Linking_context &ctx):m_chunk(sec)
+Output_chunk::Output_chunk<Symtab_section>(Symtab_section *sec, Linking_context &ctx):m_chunk(sec), m_ctx(&ctx)
 {
     
 }
 
 template<>
-Output_chunk::Output_chunk<Strtab_section>(Strtab_section *str_sec, Linking_context &ctx):m_chunk(str_sec)
-{
-    
-}
-
-template<>
-Output_chunk::Output_chunk<Symtab_section>(Symtab_section *sec, Linking_context &ctx):m_chunk(sec)
-{
-    
-}
-
-template<>
-Output_chunk::Output_chunk<Symtab_shndx_section>(Symtab_shndx_section *sec, Linking_context &ctx):m_chunk(sec)
+Output_chunk::Output_chunk<Symtab_shndx_section>(Symtab_shndx_section *sec, Linking_context &ctx):m_chunk(sec), m_ctx(&ctx)
 {
     
 }

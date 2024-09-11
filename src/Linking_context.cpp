@@ -41,7 +41,7 @@ static void Remove_unused_symbol(Linking_context &ctx,
                                   std::unordered_map<std::string_view, Linking_context::linking_package> &global_symbol_map,
                                   std::vector<bool> &is_alive);
 
-static void Clear_resources(Linking_context &ctx, 
+static void Clear_unused_resources(Linking_context &ctx, 
                             std::unordered_map<std::string_view, Linking_context::linking_package> &global_symbol_map,
                             std::vector<std::unique_ptr<Relocatable_file>> &rel_files,
                             std::vector<Input_file> &input_file_list,
@@ -330,7 +330,7 @@ Linking_context::Linking_context(Link_option_args link_option_args):m_link_optio
     Collect_rel_file_content(*this, m_link_option_args);
 }
 
-static void Clear_resources(Linking_context &ctx, 
+static void Clear_unused_resources(Linking_context &ctx, 
                             std::unordered_map<std::string_view, Linking_context::linking_package> &global_symbol_map,
                             std::vector<std::unique_ptr<Relocatable_file>> &rel_files,
                             std::vector<Input_file> &input_file_list,
@@ -366,10 +366,11 @@ void Linking_context::Link()
     for(auto &file : m_input_file)
         file.Put_global_symbol(*this);
     
+    nLinking_passes::Bind_special_symbols(*this);
 
     nLinking_passes::Resolve_symbols(*this, m_input_file, m_is_alive);
 
-    Clear_resources(*this, m_global_symbol_map, m_rel_file, m_input_file, m_is_alive);
+    Clear_unused_resources(*this, m_global_symbol_map, m_rel_file, m_input_file, m_is_alive);
 
     for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
         m_input_file[i].Init_mergeable_section(*this);
@@ -379,8 +380,6 @@ void Linking_context::Link()
 
     for(std::size_t i = 0 ; i < m_input_file.size() ; i++)
         m_input_file[i].Resolve_sesction_pieces(*this);
-
-    nLinking_passes::Bind_special_symbols(*this);
     
     for(auto &item : merged_section_map())
         item.second->Assign_offset();
@@ -403,9 +402,12 @@ void Linking_context::Link()
     using perm_t = std::filesystem::perms;
     
     auto perms = perm_t::owner_all 
-               | perm_t::group_exec | perm_t::group_read 
+               | perm_t::group_exec  | perm_t::group_read 
                | perm_t::others_exec | perm_t::others_read;
     
     output_file = Output_file(*this, m_link_option_args.output_file, filesize, perms);
+    this->buf = output_file.buf();
+    nLinking_passes::Copy_chunk(*this);
+    output_file.Serialize();
 }
 

@@ -29,13 +29,13 @@ struct Output_chunk
     void Update_shdr() const
     {
         if (m_update_shdr)
-            m_update_shdr();
+            m_update_shdr(m_chunk, *m_ctx);
     }
 
-    void Copy_buf() const
+    void Copy_chunk() const
     {
-        if (m_copy_buf)
-            m_copy_buf();
+        if (m_copy_chunk)
+            m_copy_chunk(m_chunk, *m_ctx);
     }
 
     Chunk& chunk() const {return *m_chunk;}
@@ -43,8 +43,9 @@ struct Output_chunk
 
 private:
     Chunk *m_chunk;
-    std::function<void()> m_update_shdr;
-    std::function<void()>  m_copy_buf;
+    Linking_context *m_ctx;
+    std::function<void(Chunk *chunk, Linking_context &)> m_update_shdr;
+    std::function<void(Chunk *chunk, Linking_context &)>  m_copy_chunk;
     bool m_is_osec = false;
 
 

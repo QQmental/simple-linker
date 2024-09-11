@@ -80,3 +80,18 @@ private:
     Relocatable_file *m_src;
 
 };
+
+inline Input_section* Input_file::Get_input_section(std::size_t shndx)
+{
+    auto cmp = [](const Input_section &cur, size_t shndx)
+    {
+        return cur.shndx < shndx;
+    };
+
+    auto it = std::lower_bound(input_section_list.begin(), input_section_list.end(), shndx, cmp);
+    
+    if (it == input_section_list.end() || it->shndx != shndx)
+        return nullptr;
+
+    return &*it;
+}

@@ -56,8 +56,20 @@ public:
 
     struct linking_package
     {
+        linking_package(std::unique_ptr<Symbol> symbol, Input_file *input_file) 
+                      : symbol(std::move(symbol)), 
+                        input_file(input_file),
+                        is_ref_outside(false){}
+
+        Symbol* Mark_ref() const
+        {
+            is_ref_outside = true; 
+            return symbol.get();
+        }
+
         std::unique_ptr<Symbol> symbol;
         Input_file *input_file;
+        mutable bool is_ref_outside;
     };
 
     Linking_context(Link_option_args link_option_args);
@@ -179,7 +191,7 @@ public:
 
     // Do not insert Output_chunk into this list directly, use 'Insert_chunk' or 'Insert_osec' instead
     std::list<Output_chunk> output_chunk_list;
-    std::unique_ptr<uint8_t[]> buf;
+    uint8_t *buf;
     Output_file output_file;
     Output_phdr *phdr = nullptr;
     Output_ehdr *ehdr = nullptr;
@@ -224,9 +236,8 @@ inline void Linking_context::insert_object_file(Relocatable_file src, bool is_fr
 inline Linking_context::linking_package& 
 Linking_context::Insert_global_symbol(Input_file &symbol_input_file_src, std::size_t sym_idx)
 {
-    linking_package lpkg;
-    lpkg.input_file = &symbol_input_file_src;
-    lpkg.symbol = std::make_unique<Symbol>(symbol_input_file_src.src(), sym_idx);
+    linking_package lpkg(std::make_unique<Symbol>(symbol_input_file_src.src(), sym_idx),
+                         &symbol_input_file_src);
     
     std::string_view sym_name = lpkg.symbol->name;
 

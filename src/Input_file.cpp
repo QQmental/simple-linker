@@ -68,20 +68,7 @@ static void Sort_relocation(const Input_file &input_file)
     }
 }
 
-Input_section* Input_file::Get_input_section(std::size_t shndx)
-{
-    auto cmp = [](const Input_section &cur, size_t shndx)
-    {
-        return cur.shndx < shndx;
-    };
 
-    auto it = std::lower_bound(input_section_list.begin(), input_section_list.end(), shndx, cmp);
-    
-    if (it == input_section_list.end() || it->shndx != shndx)
-        return nullptr;
-
-    return &*it;
-}
 
 Input_file::Input_file(Relocatable_file &src) : m_src(&src)
 {    
@@ -336,7 +323,7 @@ void Input_file::Collect_mergeable_section_piece()
 
 void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
 {
-    // Attach mergeable section pieces to symbols.
+    // Attach mergeable section pieces to defined symbols.
     for(std::size_t i = 1 ; i < src().symbol_table()->count() ; i++)
     {
         Symbol *sym = symbol_list[i];
@@ -408,9 +395,9 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
             Mergeable_section &msection = *m_mergeable_section_list[m_src->get_shndx(esym)].get();
           
             Merged_section::Piece *mergeable_section_piece;
-            std::size_t piece_offset;
+            std::size_t sym_offset;
 
-            std::tie(mergeable_section_piece, piece_offset) = msection.Get_mergeable_piece(esym.st_value + rel.r_addend);
+            std::tie(mergeable_section_piece, sym_offset) = msection.Get_mergeable_piece(esym.st_value + rel.r_addend);
 
             if (mergeable_section_piece == nullptr)
                 FATALF("%s", "bad fragment relocated");
@@ -419,7 +406,7 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
             new_sym.name = "<fragment>";
             new_sym.sym_idx = rel.sym();
             new_sym.Set_piece(*mergeable_section_piece);
-            new_sym.val = piece_offset - rel.r_addend;
+            new_sym.val = sym_offset - rel.r_addend;
             rel.Set_sym(m_src->symbol_table()->count() + idx); // redirect the relocation to the new symbol, 
                                                                // the 'idx' is the index in m_mergeable_section_symbol_list
             idx++;

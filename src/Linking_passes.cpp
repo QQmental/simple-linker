@@ -87,8 +87,8 @@ void nLinking_passes::Reference_dependent_file(Input_file &input_file,
         }
 
         // bind the undef symbol with the defined global symbol which is from the other file
-        input_file.symbol_list[sym_idx] = it->second.symbol.get();
-        
+        input_file.symbol_list[sym_idx] = it->second.Mark_ref();
+
         reference_file(input_file);
     }
 }
@@ -240,15 +240,15 @@ void nLinking_passes::Bind_special_symbols(Linking_context &ctx)
         FATALF("%s", "entry symbol is not found!");
     }
     else
-        symbols.entry = it->second.symbol.get();
+        symbols.entry = it->second.Mark_ref();
 
     it = ctx.global_symbol_map().find(symbols.fiini_name) ; 
     if (it != ctx.global_symbol_map().end())
-        symbols.fiini = it->second.symbol.get();
+        symbols.fiini = it->second.Mark_ref();
 
     it = ctx.global_symbol_map().find(symbols.init_name) ; 
     if (it != ctx.global_symbol_map().end())
-        symbols.init = it->second.symbol.get();     
+        symbols.init = it->second.Mark_ref();     
 }
 
 
@@ -354,6 +354,7 @@ void nLinking_passes::Compute_section_headers(Linking_context &ctx)
     }
 
     // Set section indices.
+    // section index 0 is reserved as an undefined value
     int64_t shndx = 1;
     for (auto &output_chunk : ctx.output_chunk_list)
     {
@@ -580,4 +581,20 @@ static std::size_t Set_file_offsets(Linking_context &ctx)
 
         return fileoff;
   }
+}
+
+
+void nLinking_passes::Copy_chunk(Linking_context &ctx)
+{
+    for(auto &output_chunk : ctx.output_chunk_list)
+    {
+        if (output_chunk.chunk().shdr.sh_type != SHT_REL)
+            output_chunk.Copy_chunk();
+    }
+
+    for(auto &output_chunk : ctx.output_chunk_list)
+    {
+        if (output_chunk.chunk().shdr.sh_type == SHT_REL)
+            output_chunk.Copy_chunk();
+    }
 }

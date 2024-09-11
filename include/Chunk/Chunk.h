@@ -7,11 +7,8 @@
 class Chunk
 {
 public:
-    Chunk(std::string_view name, bool is_header) : name(name), shdr(), is_relro(false), m_is_header(is_header)
+    Chunk(std::string_view name, bool is_header) : name(name), shdr(), shndx(SHN_UNDEF), is_relro(false), m_is_header(is_header)
     {
-        assert(shdr.sh_addr == 0);
-        assert(shdr.sh_flags == 0);
-        assert(shdr.sh_info == 0);
         shdr.sh_addralign = 1;
     }
     virtual ~Chunk() = default;

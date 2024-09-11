@@ -50,10 +50,7 @@ struct ELF_Rel
     }
 
     decltype(Elf64_Rela::r_addend) r_addend;
-private:
-    char* src;
-    std::size_t r_sym;
-    std::size_t r_type;
+
 
     decltype(Elf64_Rel::r_info) Get_info() const 
     {
@@ -70,6 +67,11 @@ private:
         memcpy(&r_offset, &self->r_offset, sizeof(r_offset));
         return r_offset;
     }
+    
+private:
+    char* src;
+    std::size_t r_sym;
+    std::size_t r_type;
 };
 
 inline std::size_t Get_st_type(const elf64_sym &elf_sym) {return ELF64_ST_TYPE(elf_sym.st_info);}
