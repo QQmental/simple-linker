@@ -16,9 +16,10 @@ using nLinking_context_helper::to_phdr_flags;
 
 static void Set_virtual_addresses(Linking_context &ctx);
 static std::size_t Set_file_offsets(Linking_context &ctx);
-static bool is_tbss(Chunk *chunk);
-static uint64_t align_with_skew(uint64_t val, uint64_t align, uint64_t skew);
-
+static bool Is_tbss(const Chunk *chunk);
+static uint64_t Align_with_skew(uint64_t val, uint64_t align, uint64_t skew);
+static void Reloc_alloc(Linking_context &ctx, Output_section &osec, std::size_t isec_idx);
+static void Reloc_non_alloc(Linking_context &ctx, Output_section &osec, std::size_t isec_idx);
 
 void nLinking_passes::Check_duplicate_smbols(const Input_file &file)
 {
@@ -146,7 +147,7 @@ void nLinking_passes::Combined_input_sections(Linking_context &ctx)
     // so there is no life time issue due to Output_section*
     std::unordered_map<Output_section_key, Osec_bind_state, Output_section_key::Hash_func> osec_map;
 
-    bool ctors_in_init_array = ctx.Has_ctors_and_init_array();
+    bool ctors_in_init_array = nLinking_context_helper::Has_ctors_and_init_array(ctx);
 
     struct IN_OUT_section_bind
     {
@@ -184,7 +185,7 @@ void nLinking_passes::Combined_input_sections(Linking_context &ctx)
             
             auto merge_input_section = [&]()->void
             {
-                auto key = ctx.Get_output_section_key(isec, ctors_in_init_array);
+                auto key = nLinking_passes::Get_output_section_key(ctx, isec, ctors_in_init_array);
 
                 Osec_bind_state *targ;
 
@@ -385,7 +386,7 @@ void nLinking_passes::Compute_section_headers(Linking_context &ctx)
     }
 }
 
-static bool is_tbss(Chunk *chunk)
+static bool Is_tbss(const Chunk *chunk)
 {
   return (chunk->shdr.sh_type == SHT_NOBITS) && (chunk->shdr.sh_flags & SHF_TLS);
 }
@@ -449,7 +450,7 @@ static void Set_virtual_addresses(Linking_context &ctx)
         //
         // We can instead allocate a dedicated virtual address space to tbss,
         // but that would be just a waste of the address and disk space.
-        if (is_tbss(&it->chunk()))
+        if (Is_tbss(&it->chunk()))
         {
             uint64_t addr2 = addr;
             for (;;)
@@ -457,7 +458,7 @@ static void Set_virtual_addresses(Linking_context &ctx)
                 addr2 = nUtil::align_to(addr2, alignment(it->chunk()));
                 it->chunk().shdr.sh_addr = addr2;
                 addr2 += it->chunk().shdr.sh_size;
-                if (std::next(it, 2) == ctx.output_chunk_list.end() || !is_tbss(&std::next(it)->chunk()))
+                if (std::next(it, 2) == ctx.output_chunk_list.end() || !Is_tbss(&std::next(it)->chunk()))
                     break;
                 ++it;
             }
@@ -477,7 +478,7 @@ static void Set_virtual_addresses(Linking_context &ctx)
 // Section's file offset must be congruent to its virtual address modulo
 // the page size. We use this function to satisfy that requirement.
 // just cpoied from https://github.com/rui314/mold
-static uint64_t align_with_skew(uint64_t val, uint64_t align, uint64_t skew)
+static uint64_t Align_with_skew(uint64_t val, uint64_t align, uint64_t skew)
 {
   uint64_t x = nUtil::align_down(val, align) + skew % align;
   return (val <= x) ? x : x + align;
@@ -517,7 +518,7 @@ static std::size_t Set_file_offsets(Linking_context &ctx)
         if (first.shdr.sh_addralign > ctx.page_size)
             fileoff = nUtil::align_to(fileoff, first.shdr.sh_addralign);
         else
-            fileoff = align_with_skew(fileoff, ctx.page_size, first.shdr.sh_addr);
+            fileoff = Align_with_skew(fileoff, ctx.page_size, first.shdr.sh_addr);
 
 
         // Assign ALLOC sections contiguous file offsets as long as they
@@ -584,7 +585,7 @@ static std::size_t Set_file_offsets(Linking_context &ctx)
 }
 
 
-void nLinking_passes::Copy_chunk(Linking_context &ctx)
+void nLinking_passes::Copy_chunks(Linking_context &ctx)
 {
     for(auto &output_chunk : ctx.output_chunk_list)
     {
@@ -597,4 +598,32 @@ void nLinking_passes::Copy_chunk(Linking_context &ctx)
         if (output_chunk.chunk().shdr.sh_type == SHT_REL)
             output_chunk.Copy_chunk();
     }
+}
+
+void nLinking_passes::Relocate_symbols(Linking_context &ctx, Output_section &osec)
+{
+    for(std::size_t i = 0 ; i < osec.member_list.size() ; i++)
+    {
+        if (osec.member_list[i]->shdr().sh_flags & SHF_ALLOC)
+            Reloc_alloc(ctx, osec, i);
+        else
+            Reloc_non_alloc(ctx, osec, i);
+    }
+}
+static void Reloc_alloc(Linking_context &ctx, Output_section &osec, std::size_t isec_idx)
+{
+    const Input_section &isec = *osec.member_list[isec_idx];
+    auto isec_offset = osec.input_section_offset_list[isec_idx];
+    
+    for(std::size_t rel_idx = 0 ; rel_idx < isec.rel_count() ; rel_idx++)
+    {
+        nELF_util::ELF_Rel rel = isec.rela_at(rel_idx);
+        if (   (eLinkg_type)rel.type() == eLinkg_type::R_RISCV_NONE 
+            || (eLinkg_type)rel.type() == eLinkg_type::R_RISCV_RELAX)
+            continue;
+    }
+}
+static void Reloc_non_alloc(Linking_context &ctx, Output_section &osec, std::size_t isec_idx)
+{
+    
 }

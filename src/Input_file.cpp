@@ -216,6 +216,24 @@ Get_merged_final_dst(Linking_context &ctx,
     return ctx.Insert_merged_section(id, std::move(ptr));
 }             
 
+// copied from https://github.com/rui314/mold
+// Mergeable sections (sections with SHF_MERGE bit) typically contain
+// string literals. Linker is expected to split the section contents
+// into null-terminated strings, merge them with mergeable strings
+// from other object files, and emit uniquified strings to an output
+// file.
+//
+// This mechanism reduces the size of an output file. If two source
+// files happen to contain the same string literal, the output will
+// contain only a single copy of it.
+//
+// It is less common than string literals, but mergeable sections can
+// contain fixed-sized read-only records too.
+//
+// This function splits the section contents into small pieces that we
+// call "section fragments". Section fragment is a unit of merging.
+//
+// We do not support mergeable sections that have relocations.
 static std::unique_ptr<Mergeable_section> Split_section(const Relocatable_file &file, Linking_context &ctx, const Input_section &input_sec)
 {
     std::unique_ptr<Mergeable_section> ret;
@@ -291,7 +309,11 @@ void Input_file::Init_mergeable_section(Linking_context &ctx)
 
         auto &shdr = m_src->section_hdr(shndx);
 
-        if ((shdr.sh_flags & SHF_MERGE) == 0 || shdr.sh_size == 0 || m_relocate_state_list[shndx] == eRelocate_state::no_need)
+        // if a section that is mergeable needs relocation, it is not transformed into a "Mergeable_section"
+        if (   (shdr.sh_flags & SHF_MERGE) == 0 
+            || shdr.sh_size == 0 
+            || m_relocate_state_list[shndx] == eRelocate_state::no_need
+            || isec.rel_count() != 0)
             continue;
 
         m_relocate_state_list[shndx] = eRelocate_state::mergeable;

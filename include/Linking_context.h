@@ -136,14 +136,7 @@ public:
         return ret;
     }
 
-    bool Has_ctors_and_init_array() const;
-
     uint64_t Canonicalize_type(std::string_view name, uint64_t sh_type) const;
-
-    Output_section_key Get_output_section_key(const Input_section &isec, bool ctors_in_init_array) const;
-
-    uint64_t Get_input_section_addr(Input_section *isec) const;    
-    uint64_t Get_symbol_addr(const Symbol &sym, uint64_t flags = 0) const ;
 
     eLink_machine_optinon maching_option() const {return m_link_option_args.link_machine_optinon;}
 
@@ -288,85 +281,3 @@ inline uint64_t Linking_context::Canonicalize_type(std::string_view name, uint64
     return sh_type;
 }
 
-inline Output_section_key Linking_context::Get_output_section_key(const Input_section &isec, bool ctors_in_init_array) const
-{
-    // If .init_array/.fini_array exist, .ctors/.dtors must be merged
-    // with them.
-    //
-    // CRT object files contain .ctors/.dtors sections without any
-    // relocations. They contain sentinel values, 0 and -1, to mark the
-    // beginning and the end of the initializer/finalizer pointer arrays.
-    // We do not place them into .init_array/.fini_array because such
-    // invalid pointer values would simply make the program to crash.
-    if (ctors_in_init_array && !isec.rel_count() == 0) {
-    std::string_view name = isec.name();
-    if (name == ".ctors" || name.rfind(".ctors.", 0) == 0)
-        return {".init_array", SHT_INIT_ARRAY};
-    if (name == ".dtors" || name.rfind(".dtors.", 0) == 0)
-        return {".fini_array", SHT_FINI_ARRAY};
-    }
-
-    auto &shdr = isec.shdr();
-    
-    std::string_view name = nELF_util::get_output_name(isec.name(), shdr.sh_flags);
-    uint64_t type = Canonicalize_type(name, shdr.sh_type);
-
-    return Output_section_key{name, type};
-}
-
-inline bool Linking_context::Has_ctors_and_init_array() const
-{
-    bool x = false;
-    bool y = false;
-
-    for(const Input_file &file : input_file_list())
-    {
-        x |= file.has_ctors;
-        y |= file.has_init_array;
-    }
-
-    return x && y;
-}
-
-inline uint64_t Linking_context::Get_input_section_addr(Input_section *isec) const
-{
-    auto key = Get_output_section_key(*isec, Has_ctors_and_init_array());
-
-    auto it = osec_pool().find(key);
-    
-    for(std::size_t i = 0 ; i < it->second->member_list.size() ; i++)
-    {
-        if (it->second->member_list[i] == isec)
-            return it->second->shdr.sh_addr + it->second->input_section_offset_list[i];
-    }
-
-    FATALF("%s", "unreachable");
-    return 0;
-}
-
-// copied from mold
-inline uint64_t Linking_context::Get_symbol_addr(const Symbol &sym, uint64_t flags) const
-{
-    if (Merged_section::Piece *piece = sym.piece() ; piece != nullptr)
-    {
-        if (piece->is_alive == false) {
-            // This condition is met if a non-alloc section refers an
-            // alloc section and if the referenced piece of data is
-            // garbage-collected. Typically, this condition occurs if a
-            // debug info section refers a string constant in .rodata.
-            return 0;
-        }
-
-        return piece->Get_addr() + sym.val;
-    }
-
-    Input_file *input_file = global_symbol_map().find(sym.name)->second.input_file;
-
-    //It's safe because nothing is modified
-    Input_section *isec = input_file->Get_symbol_input_section(sym);
-
-    if (isec == nullptr)
-        return sym.val; // absolute symbol
-    
-    return Get_input_section_addr(isec) + sym.val;
-}

@@ -5,6 +5,7 @@
 #include "Linking_context.h"
 #include "elf/ELF.h"
 #include "Linking_context_helper.h"
+#include "Linking_passes.h"
 
 using nLinking_context_helper::to_phdr_flags;
 using nLinking_context_helper::Get_eflags;
@@ -172,7 +173,7 @@ static std::vector<Elf64_phdr_t> Create_phdrs(Linking_context &ctx)
     // that they can be directly read/executed from ROM. If a gap between
     // two segments is two page size or larger, we give up and pack segments
     // tightly so that we don't waste too much ROM area.
-    if (ctx.physical_image_base != (std::size_t)-1)
+    if (ctx.physical_image_base != (uint64_t)-1)
     {
         for (std::size_t i = 0; i < vec.size(); i++)
         {
@@ -229,7 +230,7 @@ Output_chunk::Output_chunk<Output_ehdr>(Output_ehdr *ehdr, Linking_context &ctx)
         hdr.e_ident[EI_VERSION] = EV_CURRENT;
         hdr.e_machine = (Elf64_Half)Linking_context::eLink_machine_optinon::elf64lriscv;
         hdr.e_version = EV_CURRENT;
-        hdr.e_entry = ctx.Get_symbol_addr(*ctx.special_symbols.entry) ;
+        hdr.e_entry = nLinking_passes::Get_symbol_addr(ctx, *ctx.special_symbols.entry) ;
         hdr.e_flags = Get_eflags(ctx);
         hdr.e_ehsize = sizeof(Elf64_Ehdr);
 
@@ -324,10 +325,12 @@ Output_chunk::Output_chunk<Output_section>(Output_section *osec, Linking_context
     {
         auto *output_section = (Output_section*)_output_section;
 
-        uint8_t *buf = ctx.buf + output_section->shdr.sh_offset;
-
         if (output_section->shdr.sh_type == SHT_NOBITS)
             return;
+
+        nLinking_passes::Relocate_symbols(ctx, *output_section);
+
+        uint8_t *buf = ctx.buf + output_section->shdr.sh_offset;
 
         for(std::size_t i = 0 ; i < output_section->member_list.size() ; i++)
         {

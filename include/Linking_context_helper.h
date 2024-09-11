@@ -6,6 +6,7 @@ namespace nLinking_context_helper
 {
     uint64_t to_phdr_flags(Linking_context &ctx, const Chunk &chunk);
     uint64_t Get_eflags(const Linking_context &ctx);
+    bool Has_ctors_and_init_array(const Linking_context &ctx);
 
     inline uint64_t to_phdr_flags(Linking_context &ctx, const Chunk &chunk)
     {
@@ -51,5 +52,19 @@ namespace nLinking_context_helper
             }
         }
     return ret;
+    }
+
+    inline bool Has_ctors_and_init_array(const Linking_context &ctx)
+    {
+        bool x = false;
+        bool y = false;
+
+        for(const Input_file &file : ctx.input_file_list())
+        {
+            x |= file.has_ctors;
+            y |= file.has_init_array;
+        }
+
+        return x && y;
     }
 }

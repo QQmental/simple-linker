@@ -406,8 +406,11 @@ void Linking_context::Link()
                | perm_t::others_exec | perm_t::others_read;
     
     output_file = Output_file(*this, m_link_option_args.output_file, filesize, perms);
+    
     this->buf = output_file.buf();
-    nLinking_passes::Copy_chunk(*this);
+    
+    nLinking_passes::Copy_chunks(*this);
+    
     output_file.Serialize();
 }
 

@@ -24,15 +24,15 @@ struct Mergeable_section
 	// first: a mergeable section piece
 	// second: the offset from the returned mergeable piece
 	std::pair<Merged_section::Piece*, std::size_t> 
-	Get_mergeable_piece(std::size_t offset)
+	Get_mergeable_piece(std::size_t offset) const
 	{
-		std::vector<uint32_t> &vec = piece_offset_list;
+		const std::vector<uint32_t> &vec = piece_offset_list;
 		auto it = std::upper_bound(vec.begin(), vec.end(), offset);
 		std::size_t idx = it - 1 - vec.begin();
 		return std::make_pair(piece_list[idx], offset - vec[idx]);
 	}
 
-	std::string_view Get_contents(uint64_t piece_idx)
+	std::string_view Get_contents(uint64_t piece_idx) const
 	{
 		uint64_t cur = piece_offset_list[piece_idx];
 		if (piece_idx == piece_offset_list.size() - 1)
