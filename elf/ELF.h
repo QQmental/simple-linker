@@ -297,7 +297,7 @@ typedef struct {
 #define STT_LOPROC	13		/* Start of processor-specific */
 #define STT_HIPROC	15		/* End of processor-specific */
 
-enum class eLinkg_type : uint32_t
+enum class eReloc_type : uint32_t
 {
   R_RISCV_NONE = 0,
   R_RISCV_32 = 1,

@@ -37,16 +37,14 @@ static void Load_archived_file_section(Linking_context &linking_ctx, const std::
 
 static void Collect_rel_file_content(Linking_context &linking_ctx, const Link_option_args &link_option_args);
 
-static void Remove_unused_symbol(Linking_context &ctx, 
-                                  std::unordered_map<std::string_view, Linking_context::linking_package> &global_symbol_map,
-                                  std::vector<bool> &is_alive);
-
 static void Clear_unused_resources(Linking_context &ctx, 
                             std::unordered_map<std::string_view, Linking_context::linking_package> &global_symbol_map,
                             std::vector<std::unique_ptr<Relocatable_file>> &rel_files,
                             std::vector<Input_file> &input_file_list,
                             std::vector<bool> &is_alive);
 
+
+static void Add_synthetic_symbols(Linking_context &ctx);
 
 //the first few bytes are read from the file and compared with ARCHIVE_FILE_MAGIC, 
 //if they are not equal, return false
@@ -185,7 +183,7 @@ static void Load_archived_file_section(Linking_context &linking_ctx, const std::
 
                 std::string_view name = Read_archive_scetion_name(ar_fhdr, reinterpret_cast<const char*>(str_tbl_sec.get()));
                 //std::cout << name << "\n";
-                linking_ctx.insert_object_file(Relocatable_file(std::move(mem), std::string(name)), true);
+                linking_ctx.insert_object_file(Relocatable_file(std::move(mem), std::string(name) + path), true);
             }
         }
         fclose(fptr);
@@ -292,20 +290,6 @@ static void Parse_args(Link_option_args *dst, int argc, char* argv[])
 }
 
 
-static void Remove_unused_symbol(Linking_context &ctx, 
-                                 std::unordered_map<std::string_view, Linking_context::linking_package> &global_symbol_map,
-                                 std::vector<bool> &is_alive)
-{
-    for(auto it = global_symbol_map.begin() ; it != global_symbol_map.end() ;)
-    {
-        auto idx = it->second.input_file - &*ctx.input_file_list().begin();
-        if (is_alive[idx] == false)
-            it = global_symbol_map.erase(it);
-        else
-            ++it;
-    }
-}
-
 template <typename File_list_t>
 void Remove_unused_file(File_list_t &dst, const std::vector<bool> &is_alive)
 {
@@ -343,29 +327,137 @@ static void Clear_unused_resources(Linking_context &ctx,
         if (is_alive[i] == true)
             offset_list[i] = new_place++;
     }
-
-    Remove_unused_symbol(ctx, global_symbol_map, is_alive);
     Remove_unused_file(input_file_list, is_alive);
     Remove_unused_file(rel_files, is_alive);
-    is_alive.clear();
-
-    for(auto &item : global_symbol_map)
+    
+    for(auto it = global_symbol_map.begin() ; it != global_symbol_map.end() ;)
     {
-        auto new_offset = offset_list[item.second.input_file - input_file_data];
-        item.second.input_file =  &input_file_list[new_offset];
+        if (is_alive[it->second.input_file - input_file_data] == false)
+        {
+            it = global_symbol_map.erase(it); // this symbol is from a dead input file, so remove it
+            continue;
+        }
+        auto new_offset = offset_list[it->second.input_file - input_file_data];
+        it->second.input_file =  &input_file_list[new_offset]; // move Input_file* to the correct Input_file*
+        ++it;
     }
+    is_alive.clear();
+}
+
+static void Add_synthetic_symbols(Linking_context &ctx)
+{
+    elf64_hdr elf_hdr{};
+    elf_hdr.e_type = ET_REL;
+    elf_hdr.e_shstrndx = 3;
+    elf_hdr.e_shentsize = sizeof(Elf64_Shdr);
+    elf_hdr.e_shnum = 4;
+    elf_hdr.e_shoff = nUtil::align_to(sizeof(elf64_hdr), std::alignment_of_v<elf64_shdr>) ;
+    elf_hdr.e_machine = (Elf64_Half)ctx.maching_option();
+
+    elf64_shdr dummy_shdr{};
+
+    elf64_shdr symtab_shdr{};
+    symtab_shdr.sh_type = SHT_SYMTAB;
+    symtab_shdr.sh_addralign = std::alignment_of_v<elf64_sym>;
+    symtab_shdr.sh_entsize = sizeof(elf64_sym);
+    symtab_shdr.sh_type = SHT_SYMTAB;
+    symtab_shdr.sh_info = 1; // set the start of global symbols at 1
+    symtab_shdr.sh_link = 2;
+    
+    elf64_shdr sym_strtab_shdr{};
+    sym_strtab_shdr.sh_type = SHT_SYMTAB;
+    sym_strtab_shdr.sh_addralign = std::alignment_of_v<char>;
+    sym_strtab_shdr.sh_entsize = sizeof(char);
+    sym_strtab_shdr.sh_type = SHT_STRTAB;
+
+    elf64_shdr sec_strtab_shdr{};
+    sec_strtab_shdr.sh_type = SHT_SYMTAB;
+    sec_strtab_shdr.sh_addralign = std::alignment_of_v<char>;
+    sec_strtab_shdr.sh_entsize = sizeof(char);
+    sec_strtab_shdr.sh_type = SHT_STRTAB;
+
+    std::vector<elf64_sym> esyms;
+    std::vector<char> sym_strtab;
+    auto add_esym = [&symtab_shdr, &esyms, &sym_strtab_shdr, &sym_strtab](std::string_view name)
+    {
+        elf64_sym esym{};
+        esym.st_shndx = SHN_ABS;
+        esym.st_info = ELF64_ST_INFO(STB_GLOBAL, STT_NOTYPE);
+        esym.st_name = sym_strtab_shdr.sh_size;
+
+        sym_strtab_shdr.sh_size += name.size() + 1; // plus one null character
+
+        for(std::size_t i = 0 ; i < name.size() + 1 ; i++)
+            sym_strtab.push_back(name[i]);
+
+        esyms.push_back(esym);
+
+        symtab_shdr.sh_size += sizeof(elf64_sym);
+
+    };
+    add_esym(""); // put the first symbol, which is a dummy symbol
+    add_esym(ctx.special_symbols.global_pointer_name);
+    add_esym(ctx.special_symbols.bss_start_name);
+    add_esym(ctx.special_symbols.end_name);
+    add_esym(ctx.special_symbols._end_name);
+    add_esym(ctx.special_symbols.etext_name);
+    add_esym(ctx.special_symbols._etext_name);
+    add_esym(ctx.special_symbols.edata_name);
+    add_esym(ctx.special_symbols._edata_name);
+    add_esym(ctx.special_symbols.libc_fini_name);
+    add_esym(ctx.special_symbols.preinit_array_end_name);
+    add_esym(ctx.special_symbols.preinit_array_start_name);
+    add_esym(ctx.special_symbols.init_array_start_name);
+    add_esym(ctx.special_symbols.init_array_end_name);
+    add_esym(ctx.special_symbols.fini_array_start_name);
+    add_esym(ctx.special_symbols.fini_array_end_name);
+
+    std::vector<char> sec_strtab;
+    auto add_sec_str = [&sec_strtab_shdr, &sec_strtab](auto &str, elf64_shdr &shdr)
+    {
+        for(std::size_t idx = 0 ; idx < nUtil::const_expr_STR_len(str) + 1 ; idx++)
+            sec_strtab.push_back(str[idx]);
+        shdr.sh_name = sec_strtab_shdr.sh_size;
+        sec_strtab_shdr.sh_size += nUtil::const_expr_STR_len(str) + 1;
+    };
+
+    add_sec_str("", dummy_shdr);
+    add_sec_str(".symtab", symtab_shdr);
+    add_sec_str(".strtab", sym_strtab_shdr);
+    add_sec_str(".shstrtab", sec_strtab_shdr);
+
+    symtab_shdr.sh_offset = nUtil::align_to(elf_hdr.e_shoff + elf_hdr.e_shnum*elf_hdr.e_shentsize, symtab_shdr.sh_addralign) ;
+    sym_strtab_shdr.sh_offset = nUtil::align_to(symtab_shdr.sh_offset + symtab_shdr.sh_size, sym_strtab_shdr.sh_addralign);
+    sec_strtab_shdr.sh_offset = nUtil::align_to(sym_strtab_shdr.sh_offset + sym_strtab_shdr.sh_size, sec_strtab_shdr.sh_addralign);
+
+    // data ends with data of sec_strtab_shdr, so the allocated size is equal to its offset plus its size
+    std::unique_ptr<char[]> mem = std::make_unique<char[]>(sec_strtab_shdr.sh_offset + sec_strtab_shdr.sh_size);
+    memcpy(mem.get(), &elf_hdr, sizeof(elf_hdr));                                                                    // copy elf header
+    char *dst = (char*)memcpy(mem.get() + elf_hdr.e_shoff, &dummy_shdr, elf_hdr.e_shentsize) + elf_hdr.e_shentsize;  // copy section headers
+    dst = (char*)memcpy(dst, &symtab_shdr, elf_hdr.e_shentsize) + elf_hdr.e_shentsize;
+    dst = (char*)memcpy(dst, &sym_strtab_shdr, elf_hdr.e_shentsize) + elf_hdr.e_shentsize;;
+    dst = (char*)memcpy(dst, &sec_strtab_shdr, elf_hdr.e_shentsize) + elf_hdr.e_shentsize;;
+    memcpy(mem.get() + symtab_shdr.sh_offset, esyms.data(), esyms.size() * symtab_shdr.sh_entsize);                   // copy elf symbols
+    memcpy(mem.get() + sym_strtab_shdr.sh_offset, sym_strtab.data(), sym_strtab.size() * sym_strtab_shdr.sh_entsize); // copy name of elf syms
+    memcpy(mem.get() + sec_strtab_shdr.sh_offset, sec_strtab.data(), sec_strtab.size() * sec_strtab_shdr.sh_entsize); // copy name of sections
+
+    ctx.insert_object_file(Relocatable_file(std::move(mem), "linker-synthetic_obj"), false);
+
 }
 
 void Linking_context::Link()
 {
+    Add_synthetic_symbols(*this);
+
     for(std::size_t i = 0 ; i < m_rel_file.size() ; i++)
     {
         m_input_file.push_back(Input_file(*m_rel_file[i].get()));
     }
+    assert(m_input_file.size() == m_rel_file.size());
 
     for(auto &file : m_input_file)
         file.Put_global_symbol(*this);
-    
+
     nLinking_passes::Bind_special_symbols(*this);
 
     nLinking_passes::Resolve_symbols(*this, m_input_file, m_is_alive);
@@ -382,7 +474,9 @@ void Linking_context::Link()
         m_input_file[i].Resolve_sesction_pieces(*this);
     
     for(auto &item : merged_section_map())
+    {
         item.second->Assign_offset();
+    }
 
     nLinking_passes::Create_synthetic_sections(*this);
 
@@ -395,10 +489,14 @@ void Linking_context::Link()
 
     nLinking_passes::Sort_output_sections(*this);
 
+    Create_output_symtab();
+
     nLinking_passes::Compute_section_headers(*this);
 
-    auto filesize = nLinking_passes::Set_output_chunk_locations(*this);
+    filesize = nLinking_passes::Set_output_chunk_locations(*this);
 
+    nLinking_passes::Fix_up_synthetic_symbols(*this);
+    
     using perm_t = std::filesystem::perms;
     
     auto perms = perm_t::owner_all 
@@ -409,8 +507,22 @@ void Linking_context::Link()
     
     this->buf = output_file.buf();
     
-    nLinking_passes::Copy_chunks(*this);
+    nLinking_passes::Copy_chunks(*this); 
     
+    for(auto &osec : osec_pool())
+        std::cout << osec.first.name << "\n";
+    for(auto &[sym_name, pkg] : global_symbol_map())
+    {
+        std::cout << sym_name << " " << pkg.input_file->name() << "\n";
+    }
     output_file.Serialize();
 }
 
+void Linking_context::Create_output_symtab()
+{
+    for(auto &file : m_input_file)
+        file.Compute_symtab_size(*this);
+
+    for(auto &output_chunk : output_chunk_list)
+        output_chunk.Compute_symtab_size();
+}

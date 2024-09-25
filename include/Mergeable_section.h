@@ -28,6 +28,7 @@ struct Mergeable_section
 	{
 		const std::vector<uint32_t> &vec = piece_offset_list;
 		auto it = std::upper_bound(vec.begin(), vec.end(), offset);
+		assert(it != vec.begin());
 		std::size_t idx = it - 1 - vec.begin();
 		return std::make_pair(piece_list[idx], offset - vec[idx]);
 	}
@@ -35,6 +36,8 @@ struct Mergeable_section
 	std::string_view Get_contents(uint64_t piece_idx) const
 	{
 		uint64_t cur = piece_offset_list[piece_idx];
+		assert(piece_idx < piece_offset_list.size());
+		
 		if (piece_idx == piece_offset_list.size() - 1)
 			return data.substr(cur);
 		return data.substr(cur, piece_offset_list[piece_idx + 1] - cur);

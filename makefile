@@ -54,8 +54,8 @@ DEPS = $(OBJS:%.o=%.d)
 BINS = ld gdb_ld
 
 all: $(BINS)
-	riscv64-unknown-elf-gcc test3.c -O2 -march=rv64imafc -mabi=lp64 -c -o test3.o
-	riscv64-unknown-elf-gcc test3.o -B.  -O2 -march=rv64imafc -mabi=lp64 -o test3.elf	
+	riscv64-unknown-elf-gcc test3.c -O0 -g -march=rv64imafc -mabi=lp64 -c -o test3.o
+	riscv64-unknown-elf-gcc test3.o -O0 -g -B. -march=rv64imafc -mabi=lp64 -o test3.elf	
 
 $(Build)/main.o:src/main.cpp
 	$(CC) $< $(CPP_FLAG) $(INCLUDE) -c -o $@

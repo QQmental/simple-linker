@@ -38,6 +38,18 @@ struct Output_chunk
             m_copy_chunk(m_chunk, *m_ctx);
     }
 
+    void Compute_symtab_size() const
+    {
+        if (m_compute_symtab_size)
+            m_compute_symtab_size(m_chunk, *m_ctx);
+    }
+
+    void Populate_symtab() const
+    {
+        if (m_populate_symtab)
+            m_populate_symtab(m_chunk, *m_ctx);
+    }
+
     Chunk& chunk() const {return *m_chunk;}
     bool is_osec() const {return m_is_osec;}
 
@@ -45,7 +57,9 @@ private:
     Chunk *m_chunk;
     Linking_context *m_ctx;
     std::function<void(Chunk *chunk, Linking_context &)> m_update_shdr;
-    std::function<void(Chunk *chunk, Linking_context &)>  m_copy_chunk;
+    std::function<void(Chunk *chunk, Linking_context &)> m_copy_chunk;
+    std::function<void(Chunk *chunk, Linking_context &)> m_compute_symtab_size;
+    std::function<void(Chunk *chunk, Linking_context &)> m_populate_symtab;
     bool m_is_osec = false;
 
 

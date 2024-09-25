@@ -4,6 +4,7 @@
 #include "Chunk/Chunk.h"
 #include "elf/ELF.h"
 #include "Input_section.h"
+#include "Input_file.h"
 
 struct Output_section_key
 {
@@ -29,6 +30,11 @@ class Output_section final : public Chunk
 public:
     Output_section(Output_section_key key) : Chunk(key.name, false), type(key.type){}
     uint64_t type;
-    std::vector<const Input_section*> member_list;
-    std::vector<std::size_t> input_section_offset_list;
+    struct Member
+    {
+        const Input_section* isec;
+        const Input_file *file;
+        std::size_t offset;
+    };
+    std::vector<Member> member_list;
 };

@@ -230,7 +230,7 @@ Output_chunk::Output_chunk<Output_ehdr>(Output_ehdr *ehdr, Linking_context &ctx)
         hdr.e_ident[EI_VERSION] = EV_CURRENT;
         hdr.e_machine = (Elf64_Half)Linking_context::eLink_machine_optinon::elf64lriscv;
         hdr.e_version = EV_CURRENT;
-        hdr.e_entry = nLinking_passes::Get_symbol_addr(ctx, *ctx.special_symbols.entry) ;
+        hdr.e_entry = nLinking_passes::Get_global_symbol_addr(ctx, *ctx.special_symbols.entry) ;
         hdr.e_flags = Get_eflags(ctx);
         hdr.e_ehsize = sizeof(Elf64_Ehdr);
 
@@ -330,14 +330,12 @@ Output_chunk::Output_chunk<Output_section>(Output_section *osec, Linking_context
 
         nLinking_passes::Relocate_symbols(ctx, *output_section);
 
-        uint8_t *buf = ctx.buf + output_section->shdr.sh_offset;
+        uint8_t *osec_data = ctx.buf + output_section->shdr.sh_offset;
 
         for(std::size_t i = 0 ; i < output_section->member_list.size() ; i++)
         {
-            auto &isec = *output_section->member_list[i];
-            auto offset = output_section->input_section_offset_list[i];
-
-            memcpy(buf + offset, isec.data.begin(), isec.data.length());
+            auto &isec = *output_section->member_list[i].isec;
+            auto offset = output_section->member_list[i].offset;
             
             // Clear trailing padding. We write trap or nop instructions for
             // an executable segment so that a disassembler wouldn't try to
@@ -345,11 +343,11 @@ Output_chunk::Output_chunk<Output_section>(Output_section *osec, Linking_context
             uint64_t this_end = offset + isec.shdr().sh_size;
             uint64_t next_start;
             if (i + 1 < output_section->member_list.size())
-                next_start = output_section->input_section_offset_list[i + 1];
+                next_start = output_section->member_list[i + 1].offset;
             else
                 next_start = output_section->shdr.sh_size;
 
-            uint8_t *loc = buf + this_end;
+            uint8_t *loc = osec_data + this_end;
             uint64_t size = next_start - this_end;     
 
             // 'filler' is a machine-dependant varriable
@@ -361,7 +359,7 @@ Output_chunk::Output_chunk<Output_section>(Output_section *osec, Linking_context
                     memcpy(loc + i, filler, sizeof(filler));
             }
             else
-                memset(loc, 0, size); 
+                memset(loc, 0, size);
         }
     };// m_copy_chunk
 }
@@ -388,9 +386,9 @@ Output_chunk::Output_chunk<Merged_section>(Merged_section *msec, Linking_context
             {
                 memset(buf + vec[i].second->offset + vec[i].first.length(), 
                        0, 
-                       vec[i+1].second->offset - vec[i].first.length());
+                       vec[i+1].second->offset - vec[i].second->offset - vec[i].first.length());
             }
-
+            assert(msec->shdr.sh_offset + vec[i].second->offset + vec[i].first.length() <= ctx.filesize);
             memcpy(buf + vec[i].second->offset, vec[i].first.data(), vec[i].first.length());
         }
         

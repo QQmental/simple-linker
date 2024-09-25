@@ -16,11 +16,12 @@ public:
 
     Relocatable_file(const Relocatable_file &src) = delete;
 
-    Relocatable_file(Relocatable_file &&src) : m_section_hdr_table(std::move(src.m_section_hdr_table)), 
-                                               m_symbol_table(std::move(src.m_symbol_table)), 
-                                               m_data(std::move(src.m_data)),
-                                               m_linking_mdata(std::move(src.m_linking_mdata)),
-                                               m_name(std::move(src.m_name)){}
+    Relocatable_file(Relocatable_file &&src) noexcept 
+                   : m_section_hdr_table(std::move(src.m_section_hdr_table)), 
+                     m_symbol_table(std::move(src.m_symbol_table)), 
+                     m_data(std::move(src.m_data)),
+                     m_linking_mdata(std::move(src.m_linking_mdata)),
+                     m_name(std::move(src.m_name)){}
 
     Relocatable_file& operator= (Relocatable_file &&src) noexcept
     {
@@ -45,6 +46,7 @@ public:
 
     // return nullptr if this object file has no symbol table
     const nLinking_data::Symbol_table* symbol_table() const {return m_symbol_table.get();}
+    const elf64_sym& symbol_table(std::size_t sym_idx) const {return m_symbol_table->data(sym_idx);}
     const elf64_shdr& symbol_table_hdr() const {return section_hdr(m_linking_mdata.symtab_idx);}
     std::size_t get_shndx(const Elf64_Sym &sym) const;
     const Linking_mdata& linking_mdata () const {return m_linking_mdata;}

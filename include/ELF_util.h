@@ -16,8 +16,8 @@ struct ELF_Rel
 
         r_addend = 0;
 
-        r_sym = ELF64_R_SYM(Get_info());
-        r_type = ELF64_R_TYPE(Get_info());
+        r_sym = ELF64_R_SYM(info());
+        r_type = ELF64_R_TYPE(info());
     }
 
     ELF_Rel(Elf64_Rela &rel_src)
@@ -28,8 +28,8 @@ struct ELF_Rel
 
         memcpy(&r_addend, &self->r_addend, sizeof(r_addend));
 
-        r_sym = ELF64_R_SYM(Get_info());
-        r_type = ELF64_R_TYPE(Get_info());
+        r_sym = ELF64_R_SYM(info());
+        r_type = ELF64_R_TYPE(info());
     }
 
     std::size_t type() const {return r_type;}
@@ -37,22 +37,22 @@ struct ELF_Rel
     void Set_type(std::size_t t) 
     {
         auto self = reinterpret_cast<Elf64_Rel*>(src);
-        decltype(Elf64_Rel::r_info) new_info = (Get_info() & 0x0000'0000'FFFF'FFFF) | (t << 32);
+        decltype(Elf64_Rel::r_info) new_info = (info() & 0x0000'0000'FFFF'FFFF) | (t << 32);
         memcpy(&self->r_info, &new_info, sizeof(new_info));
-        r_type = ELF64_R_TYPE(Get_info());
+        r_type = ELF64_R_TYPE(info());
     }
     void Set_sym(std::size_t s) 
     {
         auto self = reinterpret_cast<Elf64_Rel*>(src);
-        decltype(Elf64_Rel::r_info) new_info = (Get_info() & 0xFFFF'FFFF'0000'0000) | s ;
+        decltype(Elf64_Rel::r_info) new_info = (info() & 0xFFFF'FFFF'0000'0000) | s ;
         memcpy(&self->r_info, &new_info, sizeof(new_info));
-        r_sym = ELF64_R_SYM(Get_info());
+        r_sym = ELF64_R_SYM(info());
     }
 
     decltype(Elf64_Rela::r_addend) r_addend;
 
 
-    decltype(Elf64_Rel::r_info) Get_info() const 
+    decltype(Elf64_Rel::r_info) info() const 
     {
         auto self = reinterpret_cast<Elf64_Rel*>(src);
         decltype(Elf64_Rel::r_info) r_info;
@@ -60,7 +60,7 @@ struct ELF_Rel
         return r_info;
     }
 
-    decltype(Elf64_Rel::r_offset) Get_offset() const 
+    decltype(Elf64_Rel::r_offset) offset() const 
     {
         auto self = reinterpret_cast<Elf64_Rel*>(src);
         decltype(Elf64_Rel::r_info) r_offset;
@@ -104,6 +104,26 @@ inline bool Is_sym_undef(const elf64_sym &elf_sym)
 inline bool Is_sym_weak(const elf64_sym &elf_sym)
 {
     return ELF64_ST_BIND(elf_sym.st_info) == STB_WEAK;
+}
+
+inline bool Is_sym_undef_weak(const elf64_sym &elf_sym)
+{
+    return Is_sym_weak(elf_sym) && Is_sym_undef(elf_sym);
+}
+
+inline bool Is_sym_global(const elf64_sym &elf_sym)
+{
+    return ELF64_ST_BIND(elf_sym.st_info) == STB_GLOBAL;
+}
+
+inline bool Is_sym_local(const elf64_sym &elf_sym)
+{
+    return ELF64_ST_BIND(elf_sym.st_info) == STB_LOCAL;
+}
+
+inline void Set_sym_bind(elf64_sym &elf_sym, uint8_t bind)
+{
+    elf_sym.st_info = ELF64_ST_INFO(bind, ELF64_ST_TYPE(elf_sym.st_info));
 }
 
 //copy from https://github.com/rui314/mold

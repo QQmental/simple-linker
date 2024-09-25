@@ -51,7 +51,7 @@ Merged_section::Insert(std::string_view key, uint64_t hash, uint32_t p2align)
     bool is_alive = !(this->shdr.sh_flags & SHF_ALLOC);
 
     auto *frag = m_map.insert(std::make_pair(key, std::make_unique<Piece>(*this, is_alive))).first->second.get();
-
+    
     frag->p2align = std::max(frag->p2align, p2align);
 
     return frag;

@@ -21,22 +21,34 @@ public:
 
     Input_file(Relocatable_file &src);
     Input_file(const Input_file &src) = delete;
-    Input_file(Input_file &&src) = default;
+    Input_file(Input_file &&src) noexcept 
+             : symbol_list(std::move(src.symbol_list)),
+               input_section_list(std::move(src.input_section_list)),
+               output_sym_indices(std::move(src.output_sym_indices)),
+               num_local_symtab(src.num_local_symtab),
+               num_global_symtab(src.num_global_symtab),
+               local_symtab_idx(src.local_symtab_idx),
+               global_symtab_idx(src.global_symtab_idx),
+               strtab_size(src.strtab_size),
+               has_init_array(src.has_init_array),
+               has_ctors(src.has_ctors),
+               m_mergeable_section_symbol_list(std::move(src.m_mergeable_section_symbol_list)),
+               m_relocate_state_list(std::move(src.m_relocate_state_list)),
+               m_local_sym_list(std::move(src.m_local_sym_list)),
+               m_n_local_sym(src.m_n_local_sym),
+               m_mergeable_section_list(std::move(src.m_mergeable_section_list)),
+               m_src(src.m_src)
+
+
+    {
+
+    }
     Input_file& operator= (Input_file &&src) noexcept
     {
         if (this != &src)
         {
-            symbol_list = std::move(src.symbol_list);
-            input_section_list = std::move(src.input_section_list);
-            has_init_array = src.has_init_array;
-            has_ctors = src.has_ctors;
-
-            m_mergeable_section_symbol_list = std::move(src.m_mergeable_section_symbol_list);
-            m_relocate_state_list = std::move(src.m_relocate_state_list);
-            m_local_sym_list = std::move(src.m_local_sym_list);
-            m_n_local_sym = src.m_n_local_sym;
-            m_mergeable_section_list = std::move(src.m_mergeable_section_list);
-            m_src = src.m_src;
+            this->~Input_file();
+            new (this) Input_file(std::move(src));
         }
 
         return *this;
@@ -50,6 +62,7 @@ public:
     // pieces are merged if they have same property
     void Collect_mergeable_section_piece();
     void Resolve_sesction_pieces(Linking_context &ctx);
+    void Compute_symtab_size(Linking_context &ctx);
 
     const std::vector<eRelocate_state>& relocate_state_list() const {return m_relocate_state_list;}
     Input_section* Get_input_section(std::size_t shndx);
@@ -68,6 +81,13 @@ public:
 
     //input sections are sorted by shndx
     std::vector<Input_section> input_section_list;
+    std::vector<std::size_t> output_sym_indices;
+    std::size_t num_local_symtab = 0;
+    std::size_t num_global_symtab = 0;
+    uint64_t local_symtab_idx = 0;
+    uint64_t  global_symtab_idx = 0;
+    uint64_t strtab_offset;
+    uint64_t strtab_size = 0;
     bool has_init_array = false;
     bool has_ctors = false;
 

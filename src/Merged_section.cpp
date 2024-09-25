@@ -26,7 +26,7 @@ std::vector<std::pair<std::string_view, Merged_section::Piece*>> Merged_section:
     {
         if (a.first.size() != b.first.size())
             return a.first.size() < b.first.size();
-        return memcmp(a.first.data(), b.first.data(), a.first.size());
+        return memcmp(a.first.data(), b.first.data(), a.first.size()) < 0;
     };
     
     std::sort(vec.begin(), vec.end(), cmp);
@@ -37,7 +37,7 @@ std::vector<std::pair<std::string_view, Merged_section::Piece*>> Merged_section:
 void Merged_section::Assign_offset()
 {
     auto vec = Get_ordered_span();
-
+    
     using item_t = std::decay_t<decltype(*vec.begin())>;
 
     std::size_t offset = 0;

@@ -10,7 +10,9 @@ namespace nLinking_passes
     Output_section_key Get_output_section_key(const Linking_context &ctx, const Input_section &isec, bool ctors_in_init_array);
 
     uint64_t Get_input_section_addr(const Linking_context &ctx, Input_section *isec);    
-    uint64_t Get_symbol_addr(const Linking_context &ctx, const Symbol &sym, uint64_t flags = 0) ;
+    uint64_t Get_global_symbol_addr(const Linking_context &ctx, const Symbol &sym, uint64_t flags = 0) ;
+
+    elf64_sym to_output_esym(Linking_context &ctx, Symbol &sym, uint32_t st_name, uint32_t *shndx);
 
     void Resolve_symbols(Linking_context &ctx, std::vector<Input_file> &input_file_list, std::vector<bool> &is_alive);
 
@@ -27,6 +29,8 @@ namespace nLinking_passes
 
     void Create_synthetic_sections(Linking_context &ctx);
 
+    void Populate_symtab(Linking_context &ctx);
+
     // after assigning input section offsets of Output_section, output section sizes are calculated
     void Assign_input_section_offset(Linking_context &ctx);
 
@@ -37,6 +41,8 @@ namespace nLinking_passes
     // assign virtual addresses and file offsets to ouput chunks.
     [[nodiscard]] std::size_t Set_output_chunk_locations(Linking_context &ctx);
 
+    void Fix_up_synthetic_symbols(Linking_context &ctx);
+    
     void Relocate_symbols(Linking_context &ctx, Output_section &osec);
 
     void Copy_chunks(Linking_context &ctx);
@@ -76,8 +82,8 @@ inline uint64_t nLinking_passes::Get_input_section_addr(const Linking_context &c
     
     for(std::size_t i = 0 ; i < it->second->member_list.size() ; i++)
     {
-        if (it->second->member_list[i] == isec)
-            return it->second->shdr.sh_addr + it->second->input_section_offset_list[i];
+        if (it->second->member_list[i].isec == isec)
+            return it->second->shdr.sh_addr + it->second->member_list[i].offset;
     }
     
     FATALF("%s", "unreachable");
@@ -85,7 +91,7 @@ inline uint64_t nLinking_passes::Get_input_section_addr(const Linking_context &c
 }
 
 // copied from mold
-inline uint64_t nLinking_passes::Get_symbol_addr(const Linking_context &ctx, const Symbol &sym, uint64_t flags)
+inline uint64_t nLinking_passes::Get_global_symbol_addr(const Linking_context &ctx, const Symbol &sym, uint64_t flags)
 {
     if (Merged_section::Piece *piece = sym.piece() ; piece != nullptr)
     {
@@ -100,7 +106,11 @@ inline uint64_t nLinking_passes::Get_symbol_addr(const Linking_context &ctx, con
         return piece->Get_addr() + sym.val;
     }
 
-    Input_file *input_file = ctx.global_symbol_map().find(sym.name)->second.input_file;
+    auto it = ctx.global_symbol_map().find(sym.name);
+    if (it == ctx.global_symbol_map().end())
+        FATALF("symbol is not found, probably it's not a global symbol");
+
+    Input_file *input_file = it->second.input_file;
 
     //It's safe because nothing is modified
     Input_section *isec = input_file->Get_symbol_input_section(sym);

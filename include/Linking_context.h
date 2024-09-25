@@ -60,6 +60,11 @@ public:
                       : symbol(std::move(symbol)), 
                         input_file(input_file),
                         is_ref_outside(false){}
+                        
+        linking_package(std::unique_ptr<Symbol> symbol) 
+                      : symbol(std::move(symbol)), 
+                        input_file(nullptr),
+                        is_ref_outside(false){}
 
         Symbol* Mark_ref() const
         {
@@ -79,10 +84,41 @@ public:
         Symbol *entry = nullptr;
         Symbol *fiini = nullptr;
         Symbol *init = nullptr;
-        
+
+        Symbol *global_pointer = nullptr;
+        Symbol *bss_start = nullptr;
+        Symbol *end = nullptr;
+        Symbol *_end = nullptr;
+        Symbol *etext = nullptr;
+        Symbol *_etext = nullptr;
+        Symbol *edata = nullptr;
+        Symbol *_edata = nullptr;
+        Symbol *libc_fini = nullptr;
+        Symbol *preinit_array_end = nullptr;
+        Symbol *preinit_array_start = nullptr;
+        Symbol *init_array_start = nullptr;
+        Symbol *init_array_end = nullptr;
+        Symbol *fini_array_start = nullptr;
+        Symbol *fini_array_end = nullptr;
+
         std::string_view entry_name = "_start";
         std::string_view fiini_name = "_fini";
         std::string_view init_name = "_init";
+        std::string_view global_pointer_name = "__global_pointer$";
+        std::string_view bss_start_name = "__bss_start";
+        std::string_view end_name = "end";
+        std::string_view _end_name = "_end";
+        std::string_view etext_name = "etext";
+        std::string_view _etext_name = "_etext";
+        std::string_view edata_name = "edata";
+        std::string_view _edata_name = "_edata";
+        std::string_view libc_fini_name = "__libc_fini";
+        std::string_view preinit_array_end_name = "__preinit_array_end";
+        std::string_view preinit_array_start_name = "__preinit_array_start";
+        std::string_view init_array_start_name = "__init_array_start";
+        std::string_view init_array_end_name = "__init_array_end";
+        std::string_view fini_array_start_name = "__fini_array_start";
+        std::string_view fini_array_end_name = "__fini_array_end";
     }special_symbols;
 
     void insert_object_file(Relocatable_file src, bool is_from_lib);
@@ -197,6 +233,7 @@ public:
     Got_section *got = nullptr;
     uint64_t page_size = 1<<12;
     uint64_t image_base = 0x200000;
+    uint64_t filesize = 0;
     // maybe default -1 is not a robust way to representing a null value 
     uint64_t physical_image_base = (uint64_t)-1;
 
@@ -211,6 +248,8 @@ private:
     std::unordered_map<Output_section_key, std::unique_ptr<Output_section>, Output_section_key::Hash_func> m_osec_pool;
     std::vector<std::unique_ptr<Chunk>> m_chunk_pool;
     Spin_lock m_lock;
+
+    void Create_output_symtab();
 };
 
 
@@ -220,7 +259,7 @@ inline void Linking_context::insert_object_file(Relocatable_file src, bool is_fr
     
     if (hdr.e_machine != (Elf64_Half)maching_option())
         FATALF("%sincompatible maching type for the given relocatable file: ", "");
-
+   
     m_rel_file.push_back(std::make_unique<Relocatable_file>(std::move(src)));
     m_is_alive.push_back(is_from_lib == false);
 }

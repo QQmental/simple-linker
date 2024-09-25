@@ -177,7 +177,7 @@ void Input_file::Put_global_symbol(Linking_context &ctx)
             if (m_relocate_state_list[src().get_shndx(esym)] == eRelocate_state::no_need)
                 continue;
         }
-
+      
         auto &link_pkg = ctx.Insert_global_symbol(*this, i);
 
         // a symbol having weak flag and not being synthetic which is not supported
@@ -425,8 +425,8 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
                 FATALF("%s", "bad fragment relocated");
 
             auto &new_sym = m_mergeable_section_symbol_list[idx];
+            new_sym = Symbol(src(), rel.sym());
             new_sym.name = "<fragment>";
-            new_sym.sym_idx = rel.sym();
             new_sym.Set_piece(*mergeable_section_piece);
             new_sym.val = sym_offset - rel.r_addend;
             rel.Set_sym(m_src->symbol_table()->count() + idx); // redirect the relocation to the new symbol, 
@@ -438,4 +438,71 @@ void Input_file::Resolve_sesction_pieces(Linking_context &ctx)
 
     for(auto &frag_sym : m_mergeable_section_symbol_list)
         symbol_list.push_back(&frag_sym);
+}
+
+static bool should_write_to_local_symtab(Linking_context &ctx, Symbol &sym, const Input_file &file)
+{
+    if (sym.Get_type() == STT_SECTION)
+        return false;
+
+    //discard mergeable symbols
+    if (sym.name.rfind(".L", 0) == 0)
+    {
+        return false;
+
+        if (auto *isec = const_cast<Input_file*>(&file)->Get_symbol_input_section(sym))
+        {
+            if (isec->shdr().sh_flags & SHF_MERGE)
+               return false;
+        }
+    }
+
+    return true;
+}
+
+void Input_file::Compute_symtab_size(Linking_context &ctx)
+{
+    this->output_sym_indices.resize(this->src().symbol_table()->count(), -1);
+
+    // nullptr check is done in this function, and it returns false
+    auto is_alive = [&](const Symbol *sym) -> bool
+    {
+        if (sym == nullptr)
+            return false;
+
+        if (Merged_section::Piece *piece = sym->piece())
+            return piece->is_alive;
+
+        return Get_symbol_input_section(*sym) != nullptr;
+    };
+
+    for (std::size_t i = 1; i < this->n_local_sym(); i++)
+    {
+        Symbol *sym = this->symbol_list[i];
+
+        if (is_alive(sym) && should_write_to_local_symtab(ctx, *sym, *this))
+        {
+            this->strtab_size += sym->name.size() + 1;
+            this->output_sym_indices[i] = this->num_local_symtab++;
+            sym->write_to_symtab = true;
+        }
+    }
+
+    // Compute the size of global symbols.
+    for (std::size_t i = this->n_local_sym(); i < this->src().symbol_table()->count(); i++)
+    {
+        Symbol *sym = this->symbol_list[i];
+
+        if (is_alive(sym) && sym->file() == &this->src() && sym->write_to_symtab)
+        {
+            this->strtab_size += sym->name.size() + 1;
+            // Global symbols can be demoted to local symbols based on visibility,
+            // version scripts etc.
+            if (nELF_util::Is_sym_local(sym->elf_sym()))
+                this->output_sym_indices[i] = this->num_local_symtab++;
+            else
+                this->output_sym_indices[i] = this->num_global_symtab++;
+            sym->write_to_symtab = true;
+        }
+    }
 }
