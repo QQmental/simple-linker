@@ -786,6 +786,14 @@ static void set_rs1(uint8_t *loc, uint32_t rs1)
     *(uint32_t *)loc |= rs1 << 15;
 }
 
+static bool is_hi20(const nELF_util::ELF_Rel &rel)
+{
+    auto ty = rel.type();
+    return  ty == (std::size_t)eReloc_type::R_RISCV_GOT_HI20     || ty == (std::size_t)eReloc_type::R_RISCV_TLS_GOT_HI20 ||
+            ty == (std::size_t)eReloc_type::R_RISCV_TLS_GD_HI20  || ty == (std::size_t)eReloc_type::R_RISCV_PCREL_HI20 ||
+            ty == (std::size_t)eReloc_type::R_RISCV_TLSDESC_HI20;
+}
+
 static void Reloc_alloc(Linking_context &ctx, Output_section &osec, std::size_t isec_idx)
 {
     const Input_section &isec = *osec.member_list[isec_idx].isec;
@@ -821,7 +829,7 @@ static void Reloc_alloc(Linking_context &ctx, Output_section &osec, std::size_t 
             || (eReloc_type)rel.type() == eReloc_type::R_RISCV_RELAX)
             continue;
 
-        Symbol *sym = osec.member_list[isec_idx].file->symbol_list[rel.sym()];
+        Symbol *sym = file.symbol_list[rel.sym()];
 
         auto r_offset = rel.offset();
 
@@ -829,6 +837,27 @@ static void Reloc_alloc(Linking_context &ctx, Output_section &osec, std::size_t 
         {
             if (val < lo || hi <= val)
                 FATALF("%s", "relocation out of range");
+        };
+
+        auto find_paired_reloc = [&]
+        {
+            if (sym->val <= rel.offset())
+            {
+                for (std::size_t j = rel_idx - 1; j < isec.rel_count(); j--)
+                {
+                    if (is_hi20(isec.rela_at(j)) && sym->val == isec.rela_at(j).offset())
+                        return j;
+                }
+            }
+            else
+            {
+                for (std::size_t j = rel_idx + 1; j < isec.rel_count(); j++)
+                {
+                    if (is_hi20(isec.rela_at(j)) && sym->val == isec.rela_at(j).offset())
+                        return j;
+                }
+            }
+            FATALF(": paired relocation is missing: %u", rel_idx);
         };
 
         uint8_t *loc = base + r_offset;
@@ -879,12 +908,35 @@ static void Reloc_alloc(Linking_context &ctx, Output_section &osec, std::size_t 
             }
 
             case (uint32_t)eReloc_type::R_RISCV_PCREL_LO12_I:
-                write_itype(loc, S-P);
-            break;
-
             case (uint32_t)eReloc_type::R_RISCV_PCREL_LO12_S:
-                write_stype(loc, S-P);
-            break;
+            {
+                auto idx2 = find_paired_reloc();
+                const nELF_util::ELF_Rel &rel2 = isec.rela_at(idx2);
+                Symbol *sym2 = file.symbol_list[rel2.sym()];
+
+                uint64_t S = get_sym_addr(sym2, file.src().symbol_table(rel2.sym()));
+                uint64_t A = rel2.r_addend;
+                uint64_t P = isec_addr + rel2.offset();
+                uint64_t val;
+
+                switch (rel2.type())
+                {
+                    case (uint32_t)eReloc_type::R_RISCV_PCREL_HI20:
+                        val = S + A - P;
+                    break;
+
+                    default:
+                        FATALF("non supported link type %u", rel2.type());
+                    break;
+                }
+
+                if (rel.type() == (uint32_t)eReloc_type::R_RISCV_PCREL_LO12_I)
+                    write_itype(loc, val);
+                else
+                    write_stype(loc, val);
+                break;
+            }
+
 
             case (uint32_t)eReloc_type::R_RISCV_PCREL_HI20:
                 write_utype(loc, S + A - P);
